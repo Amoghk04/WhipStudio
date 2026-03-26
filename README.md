@@ -57,7 +57,7 @@ Before using the environment, you need to build the Docker image:
 
 ```bash
 # From project root
-docker build -t WhipStudio-env:latest -f server/Dockerfile .
+docker build -t whipstudio-env:latest -f server/Dockerfile .
 ```
 
 ## Deploying to Hugging Face Spaces
