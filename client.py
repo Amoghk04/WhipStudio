@@ -1,77 +1,29 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
-"""Whipstudio Environment Client."""
-
 from typing import Dict
 
 from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import WhipstudioAction, WhipstudioObservation
+from .models import MLDebugAction, MLDebugObservation
 
 
-class WhipstudioEnv(
-    EnvClient[WhipstudioAction, WhipstudioObservation, State]
-):
-    """
-    Client for the Whipstudio Environment.
-
-    This client maintains a persistent WebSocket connection to the environment server,
-    enabling efficient multi-step interactions with lower latency.
-    Each client instance has its own dedicated environment session on the server.
-
-    Example:
-        >>> # Connect to a running server
-        >>> with WhipstudioEnv(base_url="http://localhost:8000") as client:
-        ...     result = client.reset()
-        ...     print(result.observation.echoed_message)
-        ...
-        ...     result = client.step(WhipstudioAction(message="Hello!"))
-        ...     print(result.observation.echoed_message)
-
-    Example with Docker:
-        >>> # Automatically start container and connect
-        >>> client = WhipstudioEnv.from_docker_image("WhipStudio-env:latest")
-        >>> try:
-        ...     result = client.reset()
-        ...     result = client.step(WhipstudioAction(message="Test"))
-        ... finally:
-        ...     client.close()
-    """
-
-    def _step_payload(self, action: WhipstudioAction) -> Dict:
-        """
-        Convert WhipstudioAction to JSON payload for step message.
-
-        Args:
-            action: WhipstudioAction instance
-
-        Returns:
-            Dictionary representation suitable for JSON encoding
-        """
+class MLDebugEnv(EnvClient[MLDebugAction, MLDebugObservation, State]):
+    def _step_payload(self, action: MLDebugAction) -> Dict:
         return {
-            "message": action.message,
+            "fixed_code": action.fixed_code,
+            "explanation": action.explanation,
+            "attempt_number": action.attempt_number,
         }
 
-    def _parse_result(self, payload: Dict) -> StepResult[WhipstudioObservation]:
-        """
-        Parse server response into StepResult[WhipstudioObservation].
-
-        Args:
-            payload: JSON response data from server
-
-        Returns:
-            StepResult with WhipstudioObservation
-        """
+    def _parse_result(self, payload: Dict) -> StepResult[MLDebugObservation]:
         obs_data = payload.get("observation", {})
-        observation = WhipstudioObservation(
-            echoed_message=obs_data.get("echoed_message", ""),
-            message_length=obs_data.get("message_length", 0),
+        observation = MLDebugObservation(
+            task_id=obs_data.get("task_id", "task1"),
+            task_description=obs_data.get("task_description", ""),
+            buggy_code=obs_data.get("buggy_code", ""),
+            error_log=obs_data.get("error_log", ""),
+            last_reward=obs_data.get("last_reward", 0.0),
+            metrics=obs_data.get("metrics", {}),
             done=payload.get("done", False),
             reward=payload.get("reward"),
             metadata=obs_data.get("metadata", {}),
@@ -84,15 +36,6 @@ class WhipstudioEnv(
         )
 
     def _parse_state(self, payload: Dict) -> State:
-        """
-        Parse server response into State object.
-
-        Args:
-            payload: JSON response from state request
-
-        Returns:
-            State object with episode_id and step_count
-        """
         return State(
             episode_id=payload.get("episode_id"),
             step_count=payload.get("step_count", 0),

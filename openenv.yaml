@@ -1,7 +1,30 @@
-spec_version: 1
-name: WhipStudio
-type: space
-runtime: fastapi
-app: server.app:app
-port: 8000
-
+name: whipstudio
+version: "1.0.0"
+description: >
+  An RL environment where agents debug broken PyTorch training scripts.
+  Tasks simulate real production ML incidents: broken training loops,
+  silent NaN loss from numerical instability, and GPU memory leaks
+  combined with train/val data leakage. All tasks have partial-progress
+  graders returning continuous scores in 0.0–1.0.
+author: Amogh-kal1
+license: Apache-2.0
+tasks:
+  - id: task1
+    name: Broken training loop
+    difficulty: easy
+    max_steps: 3
+  - id: task2
+    name: Silent NaN loss
+    difficulty: medium
+    max_steps: 3
+  - id: task3
+    name: OOM and data leakage
+    difficulty: hard
+    max_steps: 3
+endpoints:
+  - /reset
+  - /step
+  - /state
+  - /tasks
+  - /grader
+  - /baseline
