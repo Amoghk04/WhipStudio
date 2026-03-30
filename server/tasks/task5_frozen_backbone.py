@@ -1,8 +1,15 @@
 TASK_DESCRIPTION = """
 This is a standard transfer learning setup classifying 10 categories.
 The developer froze the backbone during testing, but forgot to unfreeze it while still passing its parameters to the optimizer.
-Fix the code so the backbone actually trains, or only pass the head parameters.
-The grader checks the gradient norm of the backbone from the first backward pass.
+This wastes memory and computation as frozen params don't need optimizer state.
+
+Fix the code so EITHER:
+1. The backbone actually trains (unfreeze it), OR
+2. Only pass trainable parameters to the optimizer
+
+The grader checks:
+- BACKBONE_GRAD_NORM: >0 means backbone is training, =0 means properly frozen
+- OPTIMIZER_PARAM_COUNT: Should be reduced if only passing head params
 """
 
 BUGGY_CODE = """
@@ -23,16 +30,19 @@ backbone = nn.Sequential(
     nn.ReLU()
 )
 
-# BUG: backbone is frozen, but passed to optimizer
+# BUG: backbone is frozen, but passed to optimizer (wastes memory/compute)
 backbone.requires_grad_(False)
 
 head = nn.Linear(512, 10)
 
-# passing both backbone and head to optimizer even though backbone is frozen
+# BUG: passing frozen backbone params to optimizer
 optimizer = torch.optim.Adam(
     list(backbone.parameters()) + list(head.parameters()), lr=0.001
 )
 criterion = nn.CrossEntropyLoss()
+
+# Count params in optimizer (for grading)
+optimizer_param_count = sum(p.numel() for g in optimizer.param_groups for p in g['params'])
 
 losses = []
 
@@ -52,11 +62,9 @@ backbone_grad_norm = sum(
 optimizer.step()
 losses.append(loss.item())
 
-# Note: if backbone is properly frozen and only head is passed, backbone_grad_norm will be 0 but optimizer won't complain.
-# If backbone is unfrozen, backbone_grad_norm will be > 0.
-# The grader handles both valid solutions.
 print('##METRICS_START##')
 print('FINAL_LOSS:' + str(losses[-1]))
 print('BACKBONE_GRAD_NORM:' + str(backbone_grad_norm))
+print('OPTIMIZER_PARAM_COUNT:' + str(optimizer_param_count))
 print('##METRICS_END##')
 """

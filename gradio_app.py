@@ -11,8 +11,9 @@ from typing import Any
 
 import gradio as gr
 import httpx
+import os
 
-DEFAULT_BASE_URL = "http://localhost:8000"
+DEFAULT_BASE_URL = os.environ.get("BASE_URL", "http://localhost:7860")
 
 # ── Task metadata ──────────────────────────────────────────────────────────
 
@@ -426,6 +427,28 @@ def do_run_baseline(base_url: str, task_id: str):
     yield reset_result + (results_md,)
 
 
+def load_current_state(base_url: str):
+    """Fetch and format current environment state for UI display."""
+    data = _api(base_url, "GET", "/state")
+    if "error" in data:
+        summary = "⚠️ Could not fetch current state. Start or reset an episode first, then try again."
+        return summary, {"error": data["error"]}
+
+    state_obj = data.get("state", data)
+    if not isinstance(state_obj, dict):
+        return "⚠️ State endpoint returned an unexpected response format.", {"raw": data}
+
+    done = bool(state_obj.get("done", False))
+    step = state_obj.get("step", 0)
+    task_id = state_obj.get("task_id", "-")
+    reward = state_obj.get("last_reward", state_obj.get("reward", 0.0))
+    summary = (
+        f"**Task:** {task_id}  |  **Step:** {step}  |  "
+        f"**Done:** {'yes' if done else 'no'}  |  **Last Reward:** {reward}"
+    )
+    return summary, state_obj
+
+
 # ── Build the UI ───────────────────────────────────────────────────────────
 
 def build_ui() -> gr.Blocks:
@@ -523,6 +546,12 @@ Fix optimizer order + learning rate bugs in a linear classifier.
                         diff_view = gr.HTML(
                             value='<div style="color:#94a3b8;text-align:center;padding:20px;">Submit a fix to see the diff</div>'
                         )
+                    with gr.Tab("🧭 Current State"):
+                        state_summary = gr.Markdown(
+                            value="Press Reset to start an episode, then Current State will appear here."
+                        )
+                        btn_refresh_state = gr.Button("🔄 Refresh State", variant="secondary", size="sm")
+                        state_json = gr.JSON(label="/state response", value={})
 
                 baseline_output = gr.Markdown(label="Baseline Results", visible=False)
 
@@ -583,6 +612,10 @@ Fix optimizer order + learning rate bugs in a linear classifier.
             fn=do_reset,
             inputs=[base_url, task_id],
             outputs=[status, code_editor, task_desc, score_display, loss_plot, acc_plot, diff_view, timeline, error_log],
+        ).then(
+            fn=load_current_state,
+            inputs=[base_url],
+            outputs=[state_summary, state_json],
         )
 
         # Submit fix
@@ -590,6 +623,16 @@ Fix optimizer order + learning rate bugs in a linear classifier.
             fn=do_step,
             inputs=[base_url, code_editor],
             outputs=[status, score_display, loss_plot, acc_plot, diff_view, timeline, error_log],
+        ).then(
+            fn=load_current_state,
+            inputs=[base_url],
+            outputs=[state_summary, state_json],
+        )
+
+        btn_refresh_state.click(
+            fn=load_current_state,
+            inputs=[base_url],
+            outputs=[state_summary, state_json],
         )
 
         # Baseline (auto-agent) — live streaming per-task
@@ -704,7 +747,7 @@ Fix optimizer order + learning rate bugs in a linear classifier.
     return app
 
 
-def main(host: str = "0.0.0.0", port: int = 7861):
+def main(host: str = "0.0.0.0", port: int = 7860):
     app = build_ui()
     app.launch(server_name=host, server_port=port, css=CUSTOM_CSS)
 

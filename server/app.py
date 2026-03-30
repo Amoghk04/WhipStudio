@@ -3,10 +3,12 @@ import os
 import sys
 
 from dotenv import load_dotenv
-load_dotenv(override=True)
+load_dotenv()
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse
 
 from openenv.core.env_server.http_server import create_app
 
@@ -23,7 +25,8 @@ except ImportError:
     from server.environment import MLDebugEnvironment
     from server.tasks.graders import RunResult, score_task
 
-os.environ["ENABLE_WEB_INTERFACE"] = "true"
+# Disable OpenEnv's default web UI so /web can mirror the custom Gradio UI.
+os.environ["ENABLE_WEB_INTERFACE"] = "false"
 
 app: FastAPI = create_app(
     MLDebugEnvironment,
@@ -34,14 +37,48 @@ app: FastAPI = create_app(
 )
 
 
-@app.get("/")
-def ready():
-    return {"status": "ok", "message": "whipstudio server is running"}
+@app.get("/__build", include_in_schema=False)
+def build_info():
+    """Build/runtime fingerprint to confirm what code is deployed."""
+    import platform
+
+    return {
+        "env_name": "whipstudio",
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "port": os.environ.get("PORT"),
+        "enable_web_interface": os.environ.get("ENABLE_WEB_INTERFACE"),
+    }
 
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+def _has_route(path: str, method: str) -> bool:
+    method = method.upper()
+    for route in app.router.routes:
+        if getattr(route, "path", None) != path:
+            continue
+        methods = getattr(route, "methods", None)
+        if methods and method in methods:
+            return True
+    return False
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect():
+    return RedirectResponse(url="/ui/", status_code=307)
+
+
+if not _has_route("/health", "GET"):
+
+    @app.get("/health", include_in_schema=False)
+    def health_get():
+        return {"status": "ok"}
+
+
+if not _has_route("/health", "POST"):
+
+    @app.post("/health", include_in_schema=False)
+    def health_post():
+        return {"status": "ok"}
 
 
 @app.get("/reset")
@@ -109,7 +146,7 @@ async def run_baseline(request: Request):
             results[task_id] = 0.0
             task_scores[task_id] = 0.0
             results[f"{task_id}_error"] = f"internal_error: {exc.__class__.__name__}: {exc}"
-    avg = round(sum(task_scores.values()) / 3, 4)
+    avg = round(sum(task_scores.values()) / max(1, len(task_scores)), 4)
     return {"baseline_scores": results, "average": avg, "env_url": env_url}
 
 
@@ -164,6 +201,16 @@ def baseline_health():
     }
 
 
+_ui_mounted = False
+
+
+@app.get("/ui", include_in_schema=False)
+def ui_trailing_slash_redirect():
+    # Gradio's HTML references assets as `./assets/...`.
+    # Without the trailing slash, browsers resolve those to `/assets/...` (breaking the UI).
+    return RedirectResponse(url="/ui/", status_code=307)
+
+
 try:
     import gradio as gr
     try:
@@ -173,8 +220,37 @@ try:
 
     gradio_ui = build_ui()
     app = gr.mount_gradio_app(app, gradio_ui, path="/ui")
-except ImportError as e:
-    print(f"Skipping Gradio UI mount: {e}")
+    _ui_mounted = True
+except Exception as e:
+    # Don't fail silently in Spaces: return a helpful error page at /ui.
+    import traceback
+
+    print(f"Failed to mount Gradio UI: {e}")
+    traceback.print_exc()
+
+
+if not _ui_mounted:
+    @app.get("/ui", include_in_schema=False)
+    @app.get("/ui/", include_in_schema=False)
+    def ui_mount_failed():
+        return HTMLResponse(
+            "<h2>WhipStudio UI failed to start</h2>"
+            "<p>The API server is running, but the Gradio UI could not be mounted.</p>"
+            "<p>Check container logs for <code>Failed to mount Gradio UI</code>.</p>",
+            status_code=500,
+        )
+
+
+@app.api_route("/web", methods=["GET", "POST"], include_in_schema=False)
+def web_redirect_root():
+    return RedirectResponse(url="/ui/", status_code=307)
+
+
+@app.api_route("/web/{path:path}", methods=["GET", "POST"], include_in_schema=False)
+def web_redirect_path(path: str):
+    if path:
+        return RedirectResponse(url=f"/ui/{path}", status_code=307)
+    return RedirectResponse(url="/ui/", status_code=307)
 
 
 def main(host: str = "0.0.0.0", port: int = 7860):

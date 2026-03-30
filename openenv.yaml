@@ -1,13 +1,59 @@
+
+spec_version: 2
 name: whipstudio
-version: "1.0.0"
-description: >
-  An RL environment where agents debug broken PyTorch training scripts.
-  Tasks simulate real production ML incidents: broken training loops,
-  silent NaN loss from numerical instability, and GPU memory leaks
-  combined with train/val data leakage. All tasks have partial-progress
-  graders returning continuous scores in 0.0–1.0.
-author: Amogh-kal1
-license: Apache-2.0
+type: space
+runtime: fastapi
+app: server.app:app
+port: 7860
+
+metadata:
+  title: WhipStudio Env
+  version: "1.1.0"
+  description: >
+    OpenEnv-compatible RL environment where agents debug broken PyTorch
+    training scripts across five tasks with continuous reward scoring.
+  author: Amogh-kal1
+  license: Apache-2.0
+  repository: Amogh-kal1/whipstudio
+  tags:
+    - openenv
+    - rl
+    - ml-debugging
+    - fastapi
+    - gradio
+
+compute:
+  python_version: "3.11"
+  cpu: 2
+  memory_gb: 16
+  gpu: false
+
+service:
+  host: 0.0.0.0
+  port: 7860
+  health_path: /health
+  base_path: /
+  web_path: /web
+  ui_path: /ui
+  docs_path: /docs
+  endpoints:
+    - method: POST
+      path: /reset
+    - method: POST
+      path: /step
+    - method: GET
+      path: /state
+    - method: GET
+      path: /tasks
+    - method: POST
+      path: /grader
+    - method: GET
+      path: /baseline
+    - method: GET
+      path: /baseline/task/{task_id}
+    - method: GET
+      path: /baseline/health
+
 tasks:
   - id: task1
     name: Broken training loop
@@ -21,10 +67,11 @@ tasks:
     name: OOM and data leakage
     difficulty: hard
     max_steps: 3
-endpoints:
-  - /reset
-  - /step
-  - /state
-  - /tasks
-  - /grader
-  - /baseline
+  - id: task4
+    name: Wrong loss function
+    difficulty: medium
+    max_steps: 3
+  - id: task5
+    name: Frozen backbone
+    difficulty: medium
+    max_steps: 3
