@@ -64,8 +64,8 @@ tasks:
     difficulty: medium
     max_steps: 3
   - id: task3
-    name: OOM and data leakage
-    difficulty: hard
+    name: Label inversion
+    difficulty: medium
     max_steps: 3
   - id: task4
     name: Wrong loss function

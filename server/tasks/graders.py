@@ -67,6 +67,8 @@ def is_valid_submission(code: str, stdout: str, exit_code: int, task_id: str = "
         tree = ast.parse(code)
         if not any(isinstance(node, (ast.For, ast.While)) for node in ast.walk(tree)):
             return False, "No ast.For or ast.While node found"
+    except SyntaxError:
+        return False, "Code has syntax errors and cannot be parsed"
     except Exception:
         pass
     return True, ""
@@ -247,13 +249,12 @@ def grade_task2(result: RunResult) -> tuple[float, dict]:
 
 def grade_task3(result: RunResult) -> tuple[float, dict]:
     """
-    Task 3: Memory Leak + Missing zero_grad
-    Bugs: 1) total_loss += loss retains graph (memory leak)
-          2) Missing optimizer.zero_grad() causes gradient accumulation
+    Task 3: Label Inversion
+    Bug: criterion(out, 1 - yb) inverts the labels — should be criterion(out, yb)
     
     Grading criteria:
-    - FINAL_LOSS should be reasonable (<20) - memory leak fixed
-    - VAL_ACC should be high (>0.8) - gradient accumulation fixed
+    - VAL_ACC should be high (>0.90) after 20 epochs — primary metric
+    - FINAL_LOSS should be low (<0.3) — convergence indicator
     - Learning trajectory should improve over epochs
     """
     valid, reason = is_valid_submission(result.fixed_code, result.stdout, result.exit_code, "task3")

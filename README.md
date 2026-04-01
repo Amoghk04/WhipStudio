@@ -22,7 +22,7 @@ Five tasks simulate real ML production bugs with increasing complexity.
 - attempt_number (int, 1-3): Which fix attempt this is
 
 ## Observation Space
-- task_id: Which task (task1/task2/task3)
+- task_id: Which task (task1/task2/task3/task4/task5)
 - task_description: Plain English instructions
 - buggy_code: The broken script
 - error_log: stdout+stderr from previous attempt
@@ -38,7 +38,7 @@ See `server/tasks/graders.py` for per-task scoring logic.
 |------|-----------|----------|
 | task1 | Easy | Wrong optimizer order + bad learning rate |
 | task2 | Medium | Silent NaN from log(0) numerical instability |
-| task3 | Hard | OOM memory leak + train/val data leakage |
+| task3 | Medium | Label inversion — wrong labels passed to loss function |
 | task4 | Medium | Wrong loss function |
 | task5 | Medium | Frozen backbone |
 

@@ -31,10 +31,10 @@ TASK_INFO = {
         "hints": "The loss computation uses torch.log() without clamping — pred can be 0.",
     },
     "task3": {
-        "name": "OOM + Data Leakage",
-        "difficulty": "🔴 Hard",
-        "description": "Fix memory leak (graph accumulation) AND train/val data leakage.",
-        "hints": "Two bugs: total_loss accumulates graph, and augmentation is applied before split.",
+        "name": "Label Inversion",
+        "difficulty": "🟡 Medium",
+        "description": "Fix a label transformation bug causing ~50% validation accuracy.",
+        "hints": "Look at what labels are being passed to the loss function — are they correct?",
     },
     "task4": {
         "name": "Wrong Loss Function",
@@ -475,7 +475,7 @@ def build_ui() -> gr.Blocks:
         button_primary_text_color="#ffffff",
     )
 
-    with gr.Blocks(title="WhipStudio — ML Debug Arena") as app:
+    with gr.Blocks(title="WhipStudio — ML Debug Arena", css=CUSTOM_CSS) as app:
 
         # ── Header ──
         gr.HTML("""
@@ -639,7 +639,7 @@ Fix optimizer order + learning rate bugs in a linear classifier.
         TASK_NAMES = {
             "task1": "🟢 Broken Training Loop",
             "task2": "🟡 Silent NaN Loss",
-            "task3": "🔴 OOM + Data Leakage",
+            "task3": "� Label Inversion",
             "task4": "🟡 Wrong Loss Function",
             "task5": "🟡 Frozen Backbone",
         }
