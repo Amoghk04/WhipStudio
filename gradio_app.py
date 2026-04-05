@@ -48,6 +48,12 @@ TASK_INFO = {
         "description": "Backbone frozen but its parameters are passed to the optimizer.",
         "hints": "Unfreeze backend or only pass head parameters to Adam.",
     },
+    "task6": {
+        "name": "Input-Output Mismatch",
+        "difficulty": "🔴 Hard",
+        "description": "CNN has 4 bugs: shape mismatch, channel order (HWC/CHW), label encoding, batch dimension.",
+        "hints": "Fix image size (32→28), permute HWC→CHW, use class indices not one-hot, add unsqueeze(0).",
+    },
 }
 
 # ── Theme ──────────────────────────────────────────────────────────────────
@@ -418,7 +424,7 @@ def do_run_baseline(base_url: str, task_id: str):
 
     results_md = "### 🤖 Baseline Agent Results\n\n"
     results_md += "| Task | Score |\n|---|---|\n"
-    for tid in ["task1", "task2", "task3", "task4", "task5"]:
+    for tid in ["task1", "task2", "task3", "task4", "task5", "task6"]:
         s = scores.get(tid, 0.0)
         emoji = "🎯" if s >= 0.9 else ("✅" if s >= 0.7 else ("📈" if s >= 0.4 else "⚠️"))
         results_md += f"| {tid} | {emoji} {s:.4f} |\n"
@@ -506,7 +512,7 @@ def build_ui() -> gr.Blocks:
                     info="Choose which LLM to run for baseline auto-agent",
                 )
                 task_id = gr.Radio(
-                    choices=["task1", "task2", "task3", "task4", "task5"],
+                    choices=["task1", "task2", "task3", "task4", "task5", "task6"],
                     value="task1",
                     label="Select Task",
                     info="Choose a debugging challenge",
@@ -655,6 +661,7 @@ Fix optimizer order + learning rate bugs in a linear classifier.
             "task3": "🔴 OOM + Data Leakage",
             "task4": "🟡 Wrong Loss Function",
             "task5": "🟡 Frozen Backbone",
+            "task6": "🔴 Input-Output Mismatch",
         }
 
         def run_baseline_live(base_url_val, model_id_val):
@@ -670,7 +677,7 @@ Fix optimizer order + learning rate bugs in a linear classifier.
             # Phase 1: Show "starting" state
             yield "\n".join(lines_header + ["⏳ Starting baseline agent..."])
 
-            for tid in ["task1", "task2", "task3", "task4", "task5"]:
+            for tid in ["task1", "task2", "task3", "task4", "task5", "task6"]:
                 tname = TASK_NAMES.get(tid, tid)
 
                 # Show "running this task" update
@@ -707,7 +714,7 @@ Fix optimizer order + learning rate bugs in a linear classifier.
             final_lines = ["### 🤖 Baseline Agent Results\n", "| Task | Score |", "|---|---|"]
             total = 0.0
             has_errors = False
-            for tid in ["task1", "task2", "task3", "task4", "task5"]:
+            for tid in ["task1", "task2", "task3", "task4", "task5", "task6"]:
                 info = results.get(tid, {"score": 0.0})
                 s = info["score"]
                 total += s
@@ -717,7 +724,7 @@ Fix optimizer order + learning rate bugs in a linear classifier.
                     has_errors = True
                     final_lines.append(f"\n> ⚠️ `{info['error'][:200]}`\n")
 
-            avg = total / 5
+            avg = total / 6
             final_lines.append(f"\n**Average: {avg:.4f}**")
             if avg >= 0.7:
                 final_lines.append("\n🎉 **Agent performed well!** The environment is solvable.")
@@ -730,7 +737,7 @@ Fix optimizer order + learning rate bugs in a linear classifier.
                 final_lines.append("\n---\n> [!WARNING]\n> Some tasks failed. Check if `HF_TOKEN` is valid and the model is accessible.")
 
             final_lines.append("\n---\n### 🔍 Auto-Agent Generated Code & Execution Logs")
-            for tid in ["task1", "task2", "task3", "task4", "task5"]:
+            for tid in ["task1", "task2", "task3", "task4", "task5", "task6"]:
                 info = results.get(tid, {})
                 fixed_code = str(info.get("fixed_code", ""))
                 output = str(info.get("output", ""))

@@ -9,12 +9,12 @@ from openenv.core.env_server.types import State
 try:
     from ..models import MLDebugAction, MLDebugObservation
     from .sandbox import execute_code
-    from .tasks import task1_broken_loop, task2_nan_loss, task3_oom_leakage, task4_wrong_loss, task5_frozen_backbone
+    from .tasks import task1_broken_loop, task2_nan_loss, task3_oom_leakage, task4_wrong_loss, task5_frozen_backbone, task6_io_mismatch
     from .tasks.graders import parse_losses, parse_val_accs, score_task
 except ImportError:
     from models import MLDebugAction, MLDebugObservation
     from server.sandbox import execute_code
-    from server.tasks import task1_broken_loop, task2_nan_loss, task3_oom_leakage, task4_wrong_loss, task5_frozen_backbone
+    from server.tasks import task1_broken_loop, task2_nan_loss, task3_oom_leakage, task4_wrong_loss, task5_frozen_backbone, task6_io_mismatch
     from server.tasks.graders import parse_losses, parse_val_accs, score_task
 
 TASKS = {
@@ -23,6 +23,7 @@ TASKS = {
     "task3": task3_oom_leakage,
     "task4": task4_wrong_loss,
     "task5": task5_frozen_backbone,
+    "task6": task6_io_mismatch,
 }
 
 

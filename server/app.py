@@ -95,6 +95,7 @@ def list_tasks():
             {"id": "task3", "name": "OOM and data leakage", "difficulty": "hard"},
             {"id": "task4", "name": "Wrong loss function", "difficulty": "medium"},
             {"id": "task5", "name": "Frozen backbone", "difficulty": "medium"},
+            {"id": "task6", "name": "Input-Output mismatch", "difficulty": "hard"},
         ],
         "action_schema": {
             "fixed_code": "string (required) — complete runnable Python script",
@@ -136,7 +137,7 @@ async def run_baseline(request: Request):
 
     results = {}
     task_scores = {}
-    for task_id in ["task1", "task2", "task3", "task4", "task5"]:
+    for task_id in ["task1", "task2", "task3", "task4", "task5", "task6"]:
         try:
             score = await asyncio.wait_for(
                 run_single_task(task_id, env_url, model_id=model_id),

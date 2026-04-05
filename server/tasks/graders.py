@@ -480,6 +480,192 @@ def grade_task5(result: RunResult) -> tuple[float, dict]:
     return final_score, breakdown
 
 
+def grade_task6(result: RunResult) -> tuple[float, dict]:
+    """
+    Task 6: Input-Output Mismatch (Multiple Bugs)
+    
+    Bugs to fix:
+    1. Shape mismatch: 32x32 images but model expects 28x28
+    2. Channel order: HWC format but model expects CHW
+    3. Label encoding: One-hot labels but CrossEntropyLoss expects indices
+    4. Batch dimension: Single sample missing batch dim in validation
+    
+    Anti-gaming measures:
+    - Must have actual CNN training (convolutions detected in code)
+    - Must show learning trajectory (loss decrease)
+    - Must have reasonable epoch count (>= 20)
+    - Penalize hardcoded metrics or unrealistic outputs
+    - Check for actual tensor operations (permute, reshape, etc.)
+    """
+    valid, reason = is_valid_submission(result.fixed_code, result.stdout, result.exit_code, "task6")
+    if not valid:
+        return 0.0, {"reason": reason}
+
+    if result.timed_out:
+        return 0.05, {"reason": "timed_out"}
+
+    if result.exit_code != 0:
+        # Check for specific error types that indicate partial fixes
+        stderr_lower = result.stderr.lower()
+        if "shape" in stderr_lower or "size" in stderr_lower:
+            return 0.10, {"reason": "shape_error_unfixed", "stderr": result.stderr[:500]}
+        if "dimension" in stderr_lower or "dim" in stderr_lower:
+            return 0.10, {"reason": "dimension_error_unfixed", "stderr": result.stderr[:500]}
+        if "expected" in stderr_lower and "got" in stderr_lower:
+            return 0.10, {"reason": "type_mismatch_unfixed", "stderr": result.stderr[:500]}
+        return 0.0, {"reason": "crash", "stderr": result.stderr[:500]}
+
+    code = result.fixed_code
+    
+    # ANTI-GAMING: Check for genuine CNN architecture (not replaced with fake output)
+    has_conv = "Conv2d" in code or "conv2d" in code
+    has_training_loop = "optimizer.step()" in code or "optimizer.step()" in code
+    has_model_forward = "model(" in code
+    
+    if not has_conv:
+        return 0.05, {"reason": "gaming_no_convolution", "hint": "Original CNN architecture must be preserved"}
+    if not has_training_loop:
+        return 0.05, {"reason": "gaming_no_training", "hint": "Must have actual training loop"}
+    if not has_model_forward:
+        return 0.05, {"reason": "gaming_no_forward", "hint": "Must use model for inference"}
+
+    # Parse metrics
+    losses = parse_losses(result.stdout)
+    val_acc = parse_scalar(result.stdout, "VAL_ACC")
+    final_loss = parse_scalar(result.stdout, "FINAL_LOSS")
+
+    # ANTI-GAMING: Check for hardcoded/faked metrics
+    if "print('VAL_ACC:0.9" in code or "print(\"VAL_ACC:0.9" in code:
+        return 0.05, {"reason": "gaming_hardcoded_metrics"}
+    
+    # ANTI-GAMING: Require reasonable number of loss values (epoch count)
+    if len(losses) < 15:
+        return 0.15, {"reason": "too_few_epochs", "epoch_count": len(losses), "expected": ">=20"}
+    
+    # ANTI-GAMING: Loss should show learning (not flat or random)
+    if len(losses) >= 10:
+        first_quarter = sum(losses[:len(losses)//4]) / (len(losses)//4)
+        last_quarter = sum(losses[-len(losses)//4:]) / (len(losses)//4)
+        
+        if first_quarter <= last_quarter:
+            return 0.20, {
+                "reason": "no_learning_trajectory",
+                "first_quarter_loss": round(first_quarter, 4),
+                "last_quarter_loss": round(last_quarter, 4),
+                "hint": "Loss should decrease during training"
+            }
+
+    # ANTI-GAMING: Check for unrealistic perfect scores with no learning
+    # High accuracy is OK if there's a valid learning trajectory
+    if val_acc is not None and val_acc > 0.99:
+        # Only flag if loss didn't converge properly (suggests hardcoded output)
+        if final_loss is not None and final_loss > 0.1:
+            return 0.25, {"reason": "unrealistic_accuracy_no_convergence", "val_acc": val_acc, "final_loss": final_loss}
+
+    if val_acc is None:
+        return 0.15, {"reason": "no_val_acc_parsed"}
+
+    if final_loss is None:
+        return 0.15, {"reason": "no_final_loss_parsed"}
+
+    # Check for NaN/Inf in losses
+    nan_count = sum(1 for loss in losses if math.isnan(loss) or math.isinf(loss))
+    if nan_count > 0:
+        return 0.10, {"reason": "nan_in_losses", "nan_count": nan_count}
+
+    # ====== BUG FIX DETECTION ======
+    bug_fixes_detected = 0
+    fix_details = {}
+
+    # Bug 1: Shape fix - check for resize or architecture change
+    has_resize = any(kw in code for kw in ["resize", "interpolate", "F.adaptive", "8 * 8", "8*8"])
+    has_28_in_data = "28, 28" in code or "28,28" in code
+    if has_resize or has_28_in_data:
+        bug_fixes_detected += 1
+        fix_details["shape_fix"] = True
+    else:
+        fix_details["shape_fix"] = False
+
+    # Bug 2: Channel order fix - check for permute/transpose OR data created in CHW format
+    has_permute = "permute" in code or "transpose" in code or "contiguous" in code
+    has_channel_reorder = ".permute(0, 3, 1, 2)" in code or "permute(0,3,1,2)" in code
+    # Alternative fix: data created directly in CHW format (n_samples, 1, H, W)
+    has_chw_data = any(pat in code for pat in ["n_samples, 1, 28", "n_samples, 1, 32", "(n_samples, 1,"])
+    if has_permute or has_channel_reorder or has_chw_data:
+        bug_fixes_detected += 1
+        fix_details["channel_fix"] = True
+    else:
+        fix_details["channel_fix"] = False
+
+    # Bug 3: Label encoding fix - check for argmax or returning indices
+    has_label_fix = any(kw in code for kw in [
+        "argmax", "class_indices", "torch.arange", 
+        "labels.long()", "y.long()", "remove one_hot"
+    ])
+    # Also check if one_hot is removed from generate_data
+    no_onehot = "one_hot" not in code or ("# " in code and "one_hot" in code)
+    if has_label_fix or no_onehot:
+        bug_fixes_detected += 1
+        fix_details["label_fix"] = True
+    else:
+        fix_details["label_fix"] = False
+
+    # Bug 4: Batch dimension fix - check for unsqueeze on single sample
+    has_batch_fix = any(kw in code for kw in ["unsqueeze(0)", "unsqueeze( 0)", "[None,", "[None ,"])
+    if has_batch_fix:
+        bug_fixes_detected += 1
+        fix_details["batch_fix"] = True
+    else:
+        fix_details["batch_fix"] = False
+
+    # ====== SCORING ======
+    # Base score from bug fixes (40% weight - 10% per bug)
+    bug_fix_score = 0.10 * bug_fixes_detected
+    
+    # Accuracy score (35% weight) - strict threshold
+    # With 5 classes, random is 20%, buggy is ~20-30%, fixed should be >80%
+    if val_acc < 0.50:
+        # Below 50% suggests not all bugs fixed
+        acc_score = 0.0
+        acc_penalty_reason = "accuracy_too_low"
+    else:
+        acc_score = sigmoid_score(val_acc, center=0.82, steepness=20.0, higher_is_better=True) * 0.35
+        acc_penalty_reason = None
+
+    # Loss convergence score (15% weight)
+    loss_score = sigmoid_score(final_loss, center=0.40, steepness=8.0, higher_is_better=False) * 0.15
+
+    # Learning trajectory bonus (10% weight)
+    trajectory_bonus = 0.0
+    if len(losses) >= 10:
+        first_half = sum(losses[:len(losses)//2]) / (len(losses)//2)
+        last_half = sum(losses[-len(losses)//2:]) / (len(losses)//2)
+        improvement_ratio = (first_half - last_half) / first_half if first_half > 0 else 0
+        if improvement_ratio > 0.5:
+            trajectory_bonus = 0.10
+        elif improvement_ratio > 0.3:
+            trajectory_bonus = 0.05
+
+    final_score = min(1.0, bug_fix_score + acc_score + loss_score + trajectory_bonus)
+    
+    breakdown = {
+        "bug_fix_score": round(bug_fix_score, 4),
+        "bugs_fixed": bug_fixes_detected,
+        "fix_details": fix_details,
+        "acc_score": round(acc_score, 4),
+        "loss_score": round(loss_score, 4),
+        "trajectory_bonus": round(trajectory_bonus, 4),
+        "val_acc": val_acc,
+        "final_loss": final_loss,
+        "epoch_count": len(losses),
+    }
+    
+    if acc_penalty_reason:
+        breakdown["acc_penalty_reason"] = acc_penalty_reason
+    
+    return final_score, breakdown
+
+
 def score_task(task_id: str, result: RunResult) -> tuple[float, dict]:
     graders = {
         "task1": grade_task1,
@@ -487,6 +673,7 @@ def score_task(task_id: str, result: RunResult) -> tuple[float, dict]:
         "task3": grade_task3,
         "task4": grade_task4,
         "task5": grade_task5,
+        "task6": grade_task6,
     }
     if task_id not in graders:
         raise ValueError(f"Unknown task_id: {task_id}")

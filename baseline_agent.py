@@ -196,13 +196,13 @@ if __name__ == "__main__":
 
     async def main():
         scores = {}
-        for tid in ["task1", "task2", "task3"]:
+        for tid in ["task1", "task2", "task3", "task4", "task5", "task6"]:
             try:
                 s = await asyncio.wait_for(run_single_task(tid, args.env_url), timeout=95.0)
             except TimeoutError:
                 s = 0.0
             scores[tid] = round(s, 4)
             print(f"{tid}: {s:.4f}")
-        print(f"Average: {sum(scores.values()) / 3:.4f}")
+        print(f"Average: {sum(scores.values()) / 6:.4f}")
 
     asyncio.run(main())
