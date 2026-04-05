@@ -122,16 +122,26 @@ def run_grader(payload: dict):
 @app.get("/baseline")
 async def run_baseline(request: Request):
     try:
-        from ..baseline_agent import run_single_task
+        from ..baseline_agent import SUPPORTED_MODEL_IDS, run_single_task
     except ImportError:
-        from baseline_agent import run_single_task
+        from baseline_agent import SUPPORTED_MODEL_IDS, run_single_task
 
     env_url = str(request.base_url).rstrip("/")
+    model_id = request.query_params.get("model_id", "Qwen/Qwen2.5-Coder-32B-Instruct")
+    if model_id not in SUPPORTED_MODEL_IDS:
+        return {
+            "error": f"Unsupported model_id '{model_id}'",
+            "supported_model_ids": SUPPORTED_MODEL_IDS,
+        }
+
     results = {}
     task_scores = {}
     for task_id in ["task1", "task2", "task3", "task4", "task5"]:
         try:
-            score = await asyncio.wait_for(run_single_task(task_id, env_url), timeout=120.0)
+            score = await asyncio.wait_for(
+                run_single_task(task_id, env_url, model_id=model_id),
+                timeout=120.0,
+            )
             results[task_id] = round(score, 4)
             task_scores[task_id] = round(score, 4)
         except TimeoutError:
@@ -147,24 +157,43 @@ async def run_baseline(request: Request):
             task_scores[task_id] = 0.0
             results[f"{task_id}_error"] = f"internal_error: {exc.__class__.__name__}: {exc}"
     avg = round(sum(task_scores.values()) / max(1, len(task_scores)), 4)
-    return {"baseline_scores": results, "average": avg, "env_url": env_url}
+    return {
+        "baseline_scores": results,
+        "average": avg,
+        "env_url": env_url,
+        "model_id": model_id,
+    }
 
 
 @app.get("/baseline/task/{task_id}")
 async def run_baseline_single(task_id: str, request: Request):
     """Run the baseline agent on a single task. Returns score + details."""
     try:
-        from ..baseline_agent import run_single_task_detailed
+        from ..baseline_agent import SUPPORTED_MODEL_IDS, run_single_task_detailed
     except ImportError:
-        from baseline_agent import run_single_task_detailed
+        from baseline_agent import SUPPORTED_MODEL_IDS, run_single_task_detailed
 
     env_url = str(request.base_url).rstrip("/")
+    model_id = request.query_params.get("model_id", "Qwen/Qwen2.5-Coder-32B-Instruct")
+    if model_id not in SUPPORTED_MODEL_IDS:
+        return {
+            "task_id": task_id,
+            "score": 0.0,
+            "status": "error",
+            "error": f"Unsupported model_id '{model_id}'",
+            "supported_model_ids": SUPPORTED_MODEL_IDS,
+        }
+
     try:
-        result = await asyncio.wait_for(run_single_task_detailed(task_id, env_url), timeout=120.0)
+        result = await asyncio.wait_for(
+            run_single_task_detailed(task_id, env_url, model_id=model_id),
+            timeout=120.0,
+        )
         return {
             "task_id": task_id,
             "score": round(result["score"], 4),
             "status": "ok",
+            "model_id": model_id,
             "fixed_code": result.get("fixed_code", ""),
             "output": result.get("output", ""),
             "attempts": result.get("attempts", []),

@@ -492,6 +492,19 @@ def build_ui() -> gr.Blocks:
             # ── Left column: Task selector ──
             with gr.Column(scale=1, min_width=280):
                 gr.Markdown("### 📋 Task Selector")
+                baseline_model = gr.Dropdown(
+                    choices=[
+                        "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+                        "Qwen/Qwen2.5-Coder-3B-Instruct",
+                        "Qwen/Qwen2.5-Coder-7B-Instruct",
+                        "Qwen/Qwen2.5-Coder-14B-Instruct",
+                        "Qwen/Qwen2.5-Coder-32B-Instruct",
+                        "mistralai/Mistral-7B-Instruct-v0.3",
+                    ],
+                    value="Qwen/Qwen2.5-Coder-32B-Instruct",
+                    label="Auto-Agent Model",
+                    info="Choose which LLM to run for baseline auto-agent",
+                )
                 task_id = gr.Radio(
                     choices=["task1", "task2", "task3", "task4", "task5"],
                     value="task1",
@@ -644,11 +657,15 @@ Fix optimizer order + learning rate bugs in a linear classifier.
             "task5": "🟡 Frozen Backbone",
         }
 
-        def run_baseline_live(base_url_val):
+        def run_baseline_live(base_url_val, model_id_val):
             """Generator that yields live progress as each task completes."""
             base = (base_url_val or DEFAULT_BASE_URL).strip().rstrip("/")
+            model_id = (model_id_val or "Qwen/Qwen2.5-Coder-32B-Instruct").strip()
             results = {}
-            lines_header = ["### 🤖 Baseline Agent — Live Progress\n"]
+            lines_header = [
+                "### 🤖 Baseline Agent — Live Progress\n",
+                f"**Model:** `{model_id}`\n",
+            ]
 
             # Phase 1: Show "starting" state
             yield "\n".join(lines_header + ["⏳ Starting baseline agent..."])
@@ -673,7 +690,7 @@ Fix optimizer order + learning rate bugs in a linear classifier.
                 # Actually call the per-task endpoint
                 try:
                     with httpx.Client(timeout=180.0) as client:
-                        resp = client.get(f"{base}/baseline/task/{tid}")
+                        resp = client.get(f"{base}/baseline/task/{tid}", params={"model_id": model_id})
                         resp.raise_for_status()
                         data = resp.json()
                 except Exception as exc:
@@ -731,7 +748,7 @@ Fix optimizer order + learning rate bugs in a linear classifier.
             outputs=[baseline_output],
         ).then(
             fn=run_baseline_live,
-            inputs=[base_url],
+            inputs=[base_url, baseline_model],
             outputs=[baseline_output],
         )
 

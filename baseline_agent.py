@@ -18,7 +18,17 @@ Rules:
 """.strip()
 
 
-def get_model():
+SUPPORTED_MODEL_IDS = [
+    "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+    "Qwen/Qwen2.5-Coder-3B-Instruct",
+    "Qwen/Qwen2.5-Coder-7B-Instruct",
+    "Qwen/Qwen2.5-Coder-14B-Instruct",
+    "Qwen/Qwen2.5-Coder-32B-Instruct",
+    "mistralai/Mistral-7B-Instruct-v0.3",
+]
+
+
+def get_model(model_id: str = "Qwen/Qwen2.5-Coder-32B-Instruct"):
     from smolagents import InferenceClientModel
 
     hf_token = os.environ.get("HF_TOKEN")
@@ -27,8 +37,13 @@ def get_model():
             "HF_TOKEN is not set. Set HF_TOKEN to run /baseline with InferenceClientModel."
         )
 
+    if model_id not in SUPPORTED_MODEL_IDS:
+        raise ValueError(
+            f"Unsupported model_id '{model_id}'. Supported options: {SUPPORTED_MODEL_IDS}"
+        )
+
     return InferenceClientModel(
-        model_id="Qwen/Qwen2.5-Coder-32B-Instruct",
+        model_id=model_id,
         token=hf_token,
     )
 
@@ -81,15 +96,23 @@ def _generate_fixed_code(model, prompt: str) -> str:
     raise AttributeError("Model does not support callable() or generate() inference APIs")
 
 
-async def run_single_task(task_id: str, env_url: str = "http://localhost:7860") -> float:
+async def run_single_task(
+    task_id: str,
+    env_url: str = "http://localhost:7860",
+    model_id: str = "Qwen/Qwen2.5-Coder-32B-Instruct",
+) -> float:
     """Backwards-compatible wrapper that returns just the score."""
-    result = await run_single_task_detailed(task_id, env_url)
+    result = await run_single_task_detailed(task_id, env_url, model_id)
     return result["score"]
 
 
-async def run_single_task_detailed(task_id: str, env_url: str = "http://localhost:7860") -> dict:
+async def run_single_task_detailed(
+    task_id: str,
+    env_url: str = "http://localhost:7860",
+    model_id: str = "Qwen/Qwen2.5-Coder-32B-Instruct",
+) -> dict:
     """Run the baseline agent on a single task. Returns detailed results."""
-    model = get_model()
+    model = get_model(model_id)
     timeout = httpx.Timeout(900.0, connect=10.0)
 
     attempts_log = []
