@@ -1,7 +1,11 @@
 TASK_DESCRIPTION = """
 This binary classification trainer has a bug causing validation accuracy around 50%.
-Fix the bug. After 20 epochs: VAL_ACC > 0.90, FINAL_LOSS < 0.3.
+The bug inverts the labels during training. Fix it so after 20 epochs:
+- VAL_ACC > 0.90 (the primary goal)
+- FINAL_LOSS < 0.3
+
 Print as: VAL_ACCS:[v1,v2,...] and FINAL_LOSS:X.XX
+Wrap output in ##METRICS_START## and ##METRICS_END##
 """
 
 BUGGY_CODE = """

@@ -109,11 +109,11 @@ def grade_task1(result: RunResult) -> tuple[float, dict]:
     Task 1: Broken Training Loop
     Bugs: 1) lr=10.0 (too high), 2) step() before backward()
     
-    Grading criteria:
-    - Must have low final loss (<0.3) - indicates proper training
-    - Must have high validation accuracy (>0.85) - indicates learning
-    - Must show monotonic improvement - indicates proper gradient flow
-    - Must NOT have loss spikes - indicates stable training
+    Grading criteria (STRICT thresholds for differentiation):
+    - VAL_ACC > 0.90 required for high score (target is >0.85)
+    - Final loss < 0.2 required for high score (target is <0.3)
+    - Must show monotonic improvement
+    - Penalize any instability heavily
     """
     valid, reason = is_valid_submission(result.fixed_code, result.stdout, result.exit_code, "task1")
     if not valid:
@@ -128,10 +128,10 @@ def grade_task1(result: RunResult) -> tuple[float, dict]:
     if not losses:
         return 0.1, {"reason": "no_losses_parsed"}
     
-    # Check for NaN/Inf - indicates numerical instability
+    # Check for NaN/Inf - indicates numerical instability (LR bug not fully fixed)
     nan_count = sum(1 for loss in losses if math.isnan(loss) or math.isinf(loss))
     if nan_count > 0:
-        return 0.15, {"reason": "nan_inf_found", "nan_count": nan_count}
+        return 0.1, {"reason": "nan_inf_found", "nan_count": nan_count}
 
     val_acc = parse_scalar(result.stdout, "VAL_ACC")
     if val_acc is None:
@@ -141,33 +141,39 @@ def grade_task1(result: RunResult) -> tuple[float, dict]:
     initial_loss = losses[0]
     max_loss = max(losses)
     
-    # Check for loss instability (spikes indicate LR too high)
-    # Healthy training shouldn't have losses > 5x initial loss
-    if max_loss > initial_loss * 5.0 or max_loss > 10.0:
-        return 0.2, {
+    # STRICT: Check for loss instability (spikes indicate LR still too high)
+    if max_loss > initial_loss * 3.0 or max_loss > 5.0:
+        return 0.15, {
             "reason": "loss_unstable_spikes", 
             "max_loss": max_loss,
             "final_loss": final_loss, 
             "val_acc": val_acc
         }
     
-    # Check for loss explosion at end
-    if final_loss > 5.0:
-        return 0.15, {"reason": "loss_unstable", "final_loss": final_loss, "val_acc": val_acc}
+    # STRICT: Loss must converge well
+    if final_loss > 1.0:
+        return 0.2, {"reason": "loss_not_converged", "final_loss": final_loss, "val_acc": val_acc}
     
-    # Primary: Validation accuracy (higher is better, target > 0.85)
-    acc_score = sigmoid_score(val_acc, center=0.85, steepness=15.0, higher_is_better=True) * 0.5
+    # STRICT thresholds - center points raised for better differentiation
+    # Target: val_acc > 0.90, final_loss < 0.15
     
-    # Secondary: Final loss should be low (lower is better, target < 0.3)
-    loss_score = sigmoid_score(final_loss, center=0.3, steepness=8.0, higher_is_better=False) * 0.3
+    # Primary: Validation accuracy (60% weight)
+    # Use steeper sigmoid for sharper differentiation
+    acc_score = sigmoid_score(val_acc, center=0.90, steepness=25.0, higher_is_better=True) * 0.60
     
-    # Bonus: Monotonic improvement (loss should decrease over time)
+    # Secondary: Final loss (30% weight) - must be low
+    loss_score = sigmoid_score(final_loss, center=0.15, steepness=15.0, higher_is_better=False) * 0.30
+    
+    # Bonus: Monotonic improvement - must be significant
     monotonic_bonus = 0.0
     if len(losses) >= 10:
-        first_quarter = sum(losses[:len(losses)//4]) / (len(losses)//4)
-        last_quarter = sum(losses[-len(losses)//4:]) / (len(losses)//4)
-        if last_quarter < first_quarter * 0.7:  # At least 30% improvement
-            monotonic_bonus = 0.2
+        first_half = sum(losses[:len(losses)//2]) / (len(losses)//2)
+        last_half = sum(losses[-len(losses)//2:]) / (len(losses)//2)
+        improvement_ratio = (first_half - last_half) / first_half if first_half > 0 else 0
+        if improvement_ratio > 0.5:  # >50% improvement required
+            monotonic_bonus = 0.10
+        elif improvement_ratio > 0.3:
+            monotonic_bonus = 0.05
     
     final_score = min(1.0, acc_score + loss_score + monotonic_bonus)
     breakdown = {
@@ -187,10 +193,10 @@ def grade_task2(result: RunResult) -> tuple[float, dict]:
     Task 2: NaN Loss
     Bug: torch.log(pred) when pred can be 0.0 after sigmoid
     
-    Grading criteria:
-    - Must have NO NaN/Inf losses - this is the primary test
-    - Must have good validation accuracy (>0.75)
-    - Must show loss convergence (<0.4)
+    Grading criteria (STRICT - NaN elimination is PRIMARY):
+    - ZERO NaN/Inf required (this is the bug!)
+    - VAL_ACC > 0.80 required for high score
+    - Loss must converge < 0.3
     """
     valid, reason = is_valid_submission(result.fixed_code, result.stdout, result.exit_code, "task2")
     if not valid:
@@ -207,11 +213,11 @@ def grade_task2(result: RunResult) -> tuple[float, dict]:
 
     nan_count = sum(1 for loss in losses if math.isnan(loss) or math.isinf(loss))
     
-    # Primary criterion: NO NaN/Inf allowed - this is the core bug being tested
+    # PRIMARY: NO NaN/Inf at ALL - this is THE bug being tested
     nan_ratio = nan_count / len(losses)
     if nan_count > 0:
-        # Heavily penalize any NaN - this is THE bug we're testing
-        return max(0.05, 0.3 * (1.0 - nan_ratio)), {
+        # STRICT: Any NaN = major failure (max 0.25 score)
+        return max(0.05, 0.25 * (1.0 - nan_ratio)), {
             "reason": "has_nans", 
             "nan_ratio": nan_ratio,
             "nan_count": nan_count
@@ -219,19 +225,19 @@ def grade_task2(result: RunResult) -> tuple[float, dict]:
     
     val_acc = parse_scalar(result.stdout, "VAL_ACC")
     if val_acc is None:
-        return 0.2, {"reason": "no_val_acc_but_no_nans"}
+        return 0.25, {"reason": "no_val_acc_but_no_nans"}
     
     finite_losses = [loss for loss in losses if not math.isnan(loss) and not math.isinf(loss)]
     final_loss = finite_losses[-1] if finite_losses else float('inf')
     
-    # No NaN = base score of 0.4 (the bug is fixed)
-    base_score = 0.4
+    # No NaN = base score of 0.35 (bug is fixed but need to verify quality)
+    base_score = 0.35
     
-    # Validation accuracy bonus (higher is better, target > 0.75)
-    acc_score = sigmoid_score(val_acc, center=0.75, steepness=12.0, higher_is_better=True) * 0.35
+    # STRICT: Validation accuracy (40% weight, center at 0.80)
+    acc_score = sigmoid_score(val_acc, center=0.80, steepness=20.0, higher_is_better=True) * 0.40
     
-    # Convergence bonus (lower is better, target < 0.4)
-    convergence_score = sigmoid_score(final_loss, center=0.4, steepness=6.0, higher_is_better=False) * 0.25
+    # STRICT: Convergence (25% weight, center at 0.25)
+    convergence_score = sigmoid_score(final_loss, center=0.25, steepness=10.0, higher_is_better=False) * 0.25
     
     final_score = min(1.0, base_score + acc_score + convergence_score)
     breakdown = {
@@ -247,14 +253,13 @@ def grade_task2(result: RunResult) -> tuple[float, dict]:
 
 def grade_task3(result: RunResult) -> tuple[float, dict]:
     """
-    Task 3: Memory Leak + Missing zero_grad
-    Bugs: 1) total_loss += loss retains graph (memory leak)
-          2) Missing optimizer.zero_grad() causes gradient accumulation
+    Task 3: Label Inversion Bug
+    Bug: criterion(out, 1 - yb) inverts labels — should be criterion(out, yb)
     
-    Grading criteria:
-    - FINAL_LOSS should be reasonable (<20) - memory leak fixed
-    - VAL_ACC should be high (>0.8) - gradient accumulation fixed
-    - Learning trajectory should improve over epochs
+    Grading criteria (STRICT - accuracy is PRIMARY):
+    - VAL_ACC > 0.90 required (buggy code gives ~0.50)
+    - FINAL_LOSS < 0.25 required
+    - Must show learning trajectory improvement
     """
     valid, reason = is_valid_submission(result.fixed_code, result.stdout, result.exit_code, "task3")
     if not valid:
@@ -271,40 +276,51 @@ def grade_task3(result: RunResult) -> tuple[float, dict]:
     val_accs = parse_val_accs(result.stdout)
     final_loss_val = parse_scalar(result.stdout, "FINAL_LOSS")
 
-    # Memory leak check: FINAL_LOSS should be reasonable
-    # With .item(), total_loss is sum of scalars (~12-20 for 20 epochs)
-    memory_score = 0.0
-    if final_loss_val is not None:
-        memory_score = sigmoid_score(final_loss_val, center=20.0, steepness=0.2, higher_is_better=False) * 0.35
-    else:
-        memory_score = 0.0
-
-    # Gradient accumulation check: accuracy should be high if training properly
-    # Without zero_grad(), gradients accumulate and training degrades
+    # CRITICAL CHECK: Buggy code produces ~0.50 accuracy (random)
+    # Fixed code should produce >0.90 accuracy
+    
     acc_score = 0.0
     final_acc = 0.0
     early_acc = 0.0
     trajectory_bonus = 0.0
     
-    if val_accs and len(val_accs) >= 2:
-        early_acc = sum(val_accs[:3]) / min(3, len(val_accs))
-        final_acc = val_accs[-1]
-        
-        # Final accuracy is the main indicator of correct training
-        acc_score = sigmoid_score(final_acc, center=0.8, steepness=15.0, higher_is_better=True) * 0.45
-        
-        # Learning trajectory: should improve over time
-        if len(val_accs) >= 5:
-            improvement = final_acc - early_acc
-            if improvement > 0.05:
-                trajectory_bonus = 0.1
-            elif improvement > 0.0:
-                trajectory_bonus = 0.05
+    if not val_accs or len(val_accs) < 2:
+        return 0.15, {"reason": "no_val_accs_parsed"}
+    
+    early_acc = sum(val_accs[:3]) / min(3, len(val_accs))
+    final_acc = val_accs[-1]
+    
+    # STRICT: Final accuracy must be high (>0.90 target)
+    # The bug makes accuracy ~0.50, so anything <0.70 is likely unfixed
+    if final_acc < 0.65:
+        return 0.15, {
+            "reason": "accuracy_too_low_likely_unfixed",
+            "final_acc": final_acc,
+            "expected": ">0.90 for fixed code"
+        }
+    
+    # Primary: Final accuracy (60% weight, center at 0.92)
+    acc_score = sigmoid_score(final_acc, center=0.92, steepness=30.0, higher_is_better=True) * 0.60
+    
+    # Secondary: Loss convergence (25% weight)
+    loss_score = 0.0
+    if final_loss_val is not None:
+        loss_score = sigmoid_score(final_loss_val, center=0.20, steepness=12.0, higher_is_better=False) * 0.25
+    
+    # Bonus: Learning trajectory (15% weight)
+    if len(val_accs) >= 5:
+        improvement = final_acc - early_acc
+        if improvement > 0.15:  # Significant learning
+            trajectory_bonus = 0.15
+        elif improvement > 0.05:
+            trajectory_bonus = 0.08
+        elif improvement > 0.0:
+            trajectory_bonus = 0.03
 
-    final_score = min(1.0, memory_score + acc_score + trajectory_bonus)
+    final_score = min(1.0, acc_score + loss_score + trajectory_bonus)
     breakdown = {
-        "memory_score": round(memory_score, 4),
         "acc_score": round(acc_score, 4),
+        "loss_score": round(loss_score, 4),
         "trajectory_bonus": round(trajectory_bonus, 4),
         "early_acc": round(early_acc, 4),
         "final_acc": round(final_acc, 4),
@@ -318,10 +334,10 @@ def grade_task4(result: RunResult) -> tuple[float, dict]:
     Task 4: Wrong Loss (Multi-label Classification)
     Bug: Using CrossEntropyLoss instead of BCEWithLogitsLoss for multi-label
     
-    Grading criteria:
-    - F1 score should be high (> 0.6) - primary metric
-    - avg_labels should be > 1.0 (proper multi-label output)
-    - Loss should converge
+    Grading criteria (STRICT):
+    - F1 > 0.70 required (buggy code gives ~0.2-0.3)
+    - avg_labels > 1.2 required (proper multi-hot predictions)
+    - Loss must converge < 0.4
     """
     valid, reason = is_valid_submission(result.fixed_code, result.stdout, result.exit_code, "task4")
     if not valid:
@@ -337,29 +353,45 @@ def grade_task4(result: RunResult) -> tuple[float, dict]:
     avg_labels = parse_scalar(result.stdout, "AVG_LABELS")
     f1 = parse_scalar(result.stdout, "F1_SCORE")
 
-    # F1 score - PRIMARY metric (higher is better, target > 0.6)
+    # CRITICAL: Check for multi-label behavior
+    # With CrossEntropyLoss, model predicts only 1 label per sample (avg_labels ≈ 1.0)
+    # With BCEWithLogitsLoss, model should predict multiple (avg_labels > 1.0)
+    
+    if avg_labels is not None and avg_labels < 0.8:
+        return 0.15, {
+            "reason": "too_few_labels_single_label_behavior",
+            "avg_labels": avg_labels,
+            "expected": ">1.2 for multi-label"
+        }
+    
+    # STRICT: F1 score - PRIMARY metric (55% weight)
     f1_score_val = 0.0
     if f1 is not None:
-        f1_score_val = sigmoid_score(f1, center=0.6, steepness=10.0, higher_is_better=True) * 0.5
+        if f1 < 0.40:
+            # Very low F1 indicates bug not fixed
+            return 0.20, {
+                "reason": "f1_too_low_likely_unfixed",
+                "f1": f1,
+                "expected": ">0.65 for fixed code"
+            }
+        f1_score_val = sigmoid_score(f1, center=0.70, steepness=15.0, higher_is_better=True) * 0.55
+    else:
+        return 0.15, {"reason": "no_f1_score_parsed"}
     
-    # Multi-label check: avg_labels should be > 1.0 (proper multi-label predictions)
-    # With 30% probability per class and 5 classes, expected avg ~1.5 labels/sample
+    # Multi-label check: avg_labels (25% weight)
     labels_score = 0.0
     if avg_labels is not None:
-        if avg_labels < 0.5:
-            # Way too few labels - likely single-label behavior
-            labels_score = 0.0
+        if avg_labels >= 1.3:
+            labels_score = 0.25  # Full score for proper multi-label
         elif avg_labels >= 1.0:
-            # Good - multiple labels per sample
-            labels_score = 0.3
+            labels_score = 0.15  # Partial - borderline multi-label
         else:
-            # Partial credit
-            labels_score = sigmoid_score(avg_labels, center=1.0, steepness=5.0, higher_is_better=True) * 0.3
+            labels_score = sigmoid_score(avg_labels, center=1.0, steepness=8.0, higher_is_better=True) * 0.15
 
-    # Loss convergence (lower is better, target < 0.5)
+    # Loss convergence (20% weight)
     loss_score = 0.0
     if final_loss is not None:
-        loss_score = sigmoid_score(final_loss, center=0.5, steepness=4.0, higher_is_better=False) * 0.2
+        loss_score = sigmoid_score(final_loss, center=0.35, steepness=8.0, higher_is_better=False) * 0.20
 
     final_score = min(1.0, f1_score_val + labels_score + loss_score)
     breakdown = {
@@ -379,14 +411,14 @@ def grade_task5(result: RunResult) -> tuple[float, dict]:
     Bug: Backbone is frozen but still passed to optimizer (wastes memory)
     
     Valid fixes:
-    1. Unfreeze backbone -> grad_norm > 0, same param count
-    2. Only pass head params to optimizer -> grad_norm = 0, reduced param count
+    1. Unfreeze backbone -> grad_norm > 0
+    2. Only pass head params to optimizer -> param_count < 10000
     
-    The buggy code has: grad_norm = 0, param_count = 530442 (full model)
+    Buggy state: grad_norm = 0, param_count = 530442
     
-    Grading criteria:
-    - Either backbone has gradients (unfrozen), OR
-    - Optimizer param count is reduced (only head)
+    Grading criteria (STRICT - binary fix detection):
+    - Must demonstrate ONE of the two valid fixes
+    - Loss must be reasonable (<3.0 for CrossEntropy on 10 classes)
     """
     valid, reason = is_valid_submission(result.fixed_code, result.stdout, result.exit_code, "task5")
     if not valid:
@@ -402,30 +434,39 @@ def grade_task5(result: RunResult) -> tuple[float, dict]:
     grad_norm = parse_scalar(result.stdout, "BACKBONE_GRAD_NORM")
     param_count = parse_scalar(result.stdout, "OPTIMIZER_PARAM_COUNT")
 
-    # Loss should be reasonable (10-class classification, CE loss)
-    loss_score = 0.0
-    if final_loss is not None:
-        loss_score = sigmoid_score(final_loss, center=2.5, steepness=2.0, higher_is_better=False) * 0.3
-    
-    # The bug: frozen backbone (grad_norm=0) but full params in optimizer (param_count=530442)
-    # Fix 1: Unfreeze -> grad_norm > 0 (any amount)
-    # Fix 2: Only head -> param_count < 100000 (head has ~5130 params)
-    
+    # Detect fix type FIRST
     fix_score = 0.0
     fix_type = "none"
     
-    if grad_norm is not None and grad_norm > 0.1:
-        # Backbone is unfrozen and training
-        fix_score = 0.7
+    # Fix 1: Unfreeze backbone (grad_norm > 0)
+    if grad_norm is not None and grad_norm > 0.01:
+        fix_score = 0.70
         fix_type = "unfrozen"
-    elif param_count is not None and param_count < 100000:
-        # Only head params in optimizer (head has ~5130 params)
-        fix_score = 0.7
+    # Fix 2: Only head params (param_count should be ~5130 for Linear(512, 10))
+    elif param_count is not None and param_count < 15000:
+        fix_score = 0.70
         fix_type = "head_only"
-    elif grad_norm is not None and grad_norm == 0.0 and (param_count is None or param_count > 100000):
-        # Buggy state: frozen backbone but full params in optimizer
-        fix_score = 0.0
-        fix_type = "buggy"
+    # Buggy state: frozen (grad_norm=0) but full params (>500000)
+    elif grad_norm is not None and grad_norm == 0.0:
+        if param_count is not None and param_count > 100000:
+            return 0.10, {
+                "reason": "buggy_state_unchanged",
+                "grad_norm": grad_norm,
+                "param_count": param_count,
+                "hint": "Either unfreeze backbone or only pass head params to optimizer"
+            }
+    
+    if fix_score == 0.0:
+        return 0.15, {
+            "reason": "could_not_detect_valid_fix",
+            "grad_norm": grad_norm,
+            "param_count": param_count
+        }
+
+    # Loss should be reasonable (30% weight)
+    loss_score = 0.0
+    if final_loss is not None:
+        loss_score = sigmoid_score(final_loss, center=2.5, steepness=3.0, higher_is_better=False) * 0.30
 
     final_score = min(1.0, loss_score + fix_score)
     breakdown = {
