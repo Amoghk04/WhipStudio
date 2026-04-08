@@ -666,6 +666,19 @@ def grade_task6(result: RunResult) -> tuple[float, dict]:
     return final_score, breakdown
 
 
+MIN_SCORE = 0.005  # Avoid exact 0.0
+MAX_SCORE = 0.995  # Avoid exact 1.0
+
+
+def clamp_score(score: float) -> float:
+    """Clamp score to (0, 1) exclusive - hackathon requires strictly between 0 and 1."""
+    if score <= 0.0:
+        return MIN_SCORE
+    if score >= 1.0:
+        return MAX_SCORE
+    return score
+
+
 def score_task(task_id: str, result: RunResult) -> tuple[float, dict]:
     graders = {
         "task1": grade_task1,
@@ -679,4 +692,5 @@ def score_task(task_id: str, result: RunResult) -> tuple[float, dict]:
         raise ValueError(f"Unknown task_id: {task_id}")
 
     score, breakdown = graders[task_id](result)
-    return round(max(0.0, min(1.0, score)), 4), breakdown
+    # Clamp to (0, 1) exclusive - hackathon validator requires strict bounds
+    return round(clamp_score(score), 4), breakdown

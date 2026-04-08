@@ -24,6 +24,10 @@ except ImportError:
     from server.environment import MLDebugEnvironment
     from server.tasks.graders import RunResult, score_task
 
+# Score bounds - hackathon requires strictly (0, 1) not [0, 1]
+MIN_SCORE = 0.005
+MAX_SCORE = 0.995
+
 # Disable OpenEnv's default web UI so /web can mirror the custom Gradio UI.
 os.environ["ENABLE_WEB_INTERFACE"] = "false"
 
@@ -243,16 +247,16 @@ async def run_baseline(request: Request):
             results[task_id] = round(score, 4)
             task_scores[task_id] = round(score, 4)
         except TimeoutError:
-            results[task_id] = 0.0
-            task_scores[task_id] = 0.0
+            results[task_id] = MIN_SCORE
+            task_scores[task_id] = MIN_SCORE
             results[f"{task_id}_error"] = f"timeout: task took longer than {timeout_secs}s"
         except httpx.HTTPError as exc:
-            results[task_id] = 0.0
-            task_scores[task_id] = 0.0
+            results[task_id] = MIN_SCORE
+            task_scores[task_id] = MIN_SCORE
             results[f"{task_id}_error"] = f"http_error: {exc.__class__.__name__}: {exc}"
         except Exception as exc:
-            results[task_id] = 0.0
-            task_scores[task_id] = 0.0
+            results[task_id] = MIN_SCORE
+            task_scores[task_id] = MIN_SCORE
             results[f"{task_id}_error"] = f"internal_error: {exc.__class__.__name__}: {exc}"
     avg = round(sum(task_scores.values()) / max(1, len(task_scores)), 4)
     return {
@@ -288,7 +292,7 @@ async def run_baseline_single(task_id: str, request: Request):
     if model_id not in SUPPORTED_MODEL_IDS:
         return {
             "task_id": task_id,
-            "score": 0.0,
+            "score": MIN_SCORE,
             "status": "error",
             "error": f"Unsupported model_id '{model_id}'",
             "supported_model_ids": SUPPORTED_MODEL_IDS,
@@ -316,9 +320,9 @@ async def run_baseline_single(task_id: str, request: Request):
             "tool_history": result.get("tool_history", []),
         }
     except TimeoutError:
-        return {"task_id": task_id, "score": 0.0, "status": "timeout", "error": f"Task took longer than {timeout_secs}s"}
+        return {"task_id": task_id, "score": MIN_SCORE, "status": "timeout", "error": f"Task took longer than {timeout_secs}s"}
     except Exception as exc:
-        return {"task_id": task_id, "score": 0.0, "status": "error", "error": f"{exc.__class__.__name__}: {exc}"}
+        return {"task_id": task_id, "score": MIN_SCORE, "status": "error", "error": f"{exc.__class__.__name__}: {exc}"}
 
 
 @app.get("/baseline/health")
