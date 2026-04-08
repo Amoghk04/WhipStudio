@@ -446,7 +446,6 @@ Analyze and decide your next action. Respond with JSON only.""".strip()
             response_text = response.choices[0].message.content or ""
             parsed = parse_agent_response(response_text)
         except Exception as e:
-            print(f"[ERROR] LLM call failed: {e}", file=sys.stderr)
             tool_history.append(f"[Turn {turn}] LLM ERROR: {str(e)[:100]}")
             continue
         
@@ -461,7 +460,6 @@ Analyze and decide your next action. Respond with JSON only.""".strip()
         
         # Force submit_fix on last turn
         if turns_remaining == 0 and action_type != "submit_fix":
-            print(f"[INFO] Forcing submit_fix on last turn (was: {action_type})", file=sys.stderr)
             action_type = "submit_fix"
             # Try to salvage code from params
             fixed = (
@@ -477,11 +475,9 @@ Analyze and decide your next action. Respond with JSON only.""".strip()
             action = build_action(action_type, action_params, buggy_code)
             result = env.step(action)
         except ValueError as ve:
-            print(f"[ERROR] Action build failed: {ve}", file=sys.stderr)
             tool_history.append(f"[Turn {turn}] BUILD ERROR: {str(ve)[:100]}")
             continue
         except Exception as e:
-            print(f"[ERROR] Step failed: {e}", file=sys.stderr)
             tool_history.append(f"[Turn {turn}] API ERROR: {str(e)[:100]}")
             continue
         
@@ -550,7 +546,6 @@ Previous execution output (if any):
         fixed_code = response.choices[0].message.content or ""
         fixed_code = strip_markdown_fences(fixed_code)
     except Exception as e:
-        print(f"[ERROR] LLM call failed: {e}", file=sys.stderr)
         return 0.0, ""
     
     if not fixed_code.strip():
@@ -562,7 +557,6 @@ Previous execution output (if any):
         reward = float(result.get("reward", 0.0) or 0.0)
         return reward, fixed_code
     except Exception as e:
-        print(f"[ERROR] Step failed: {e}", file=sys.stderr)
         return 0.0, ""
 
 
@@ -595,7 +589,6 @@ def run_task(
         try:
             obs = env.reset(task_id)
         except Exception as e:
-            print(f"[ERROR] Failed to reset {task_id}: {e}", file=sys.stderr)
             continue
         
         if use_tools:
@@ -646,25 +639,17 @@ def main():
     
     use_tools = not args.no_tools
     
-    # Initialize clients
-    print(f"[INFO] Connecting to environment at {args.env_url}", flush=True)
-    print(f"[INFO] Mode: {'tool-calling agent' if use_tools else 'simple submit-only'}", flush=True)
-    
     env = WhipStudioClient(args.env_url)
     
     if not env.health_check():
-        print(f"[ERROR] Cannot reach environment at {args.env_url}", file=sys.stderr)
         sys.exit(1)
     
-    print("[INFO] Environment is reachable", flush=True)
     
     llm_client = get_openai_client()
     model = get_model_name()
-    print(f"[INFO] Using model: {model}", flush=True)
     
     # Determine tasks
     task_ids = args.tasks if args.tasks else env.get_tasks()
-    print(f"[INFO] Running tasks: {task_ids}", flush=True)
     
     # Run inference
     start_time = time.time()
@@ -675,14 +660,13 @@ def main():
         score = run_task(env, llm_client, model, task_id, use_tools, args.max_turns)
         scores[task_id] = score
         elapsed = time.time() - task_start
-        print(f"[INFO] {task_id} completed in {elapsed:.1f}s with score {score:.4f}", flush=True)
     
     # Summary
     total_elapsed = time.time() - start_time
     avg_score = sum(scores.values()) / len(scores) if scores else 0.0
     
     print("\n" + "=" * 50, flush=True)
-    print("[SUMMARY]", flush=True)
+    print("SUMMARY", flush=True)
     print(f"  Mode: {'tool-calling' if use_tools else 'simple'}", flush=True)
     print(f"  Tasks completed: {len(scores)}", flush=True)
     print(f"  Total time: {total_elapsed:.1f}s", flush=True)
