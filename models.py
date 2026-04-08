@@ -103,7 +103,7 @@ class MLDebugObservation(Observation):
     action_type: str = Field(default="submit_fix", description="Which action produced this observation")
     turn: int = Field(default=0, description="Current turn number in this episode")
     episode_done: bool = Field(default=False, description="Whether the episode is complete")
-    reward: float = Field(default=0.0, description="Reward (0.0 for tools, grader score for submit_fix)")
+    reward: Optional[float] = Field(default=None, description="Reward (None for tools, grader score for submit_fix)")
     error: Optional[str] = Field(default=None, description="Error message if action failed")
     episode_id: str = Field(default="", description="Episode ID for session tracking")
     
