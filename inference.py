@@ -48,14 +48,13 @@ TASK_CONFIG = {
     "task6": {"max_turns": 10, "difficulty": "hard"},
 }
 
-MAX_ATTEMPTS_PER_TASK = 2  # Attempts with reset between them
+MAX_ATTEMPTS_PER_TASK = 1  # Single attempt per task (no retries)
 DEFAULT_MAX_TURNS = 8     # Tool turns per attempt
 REQUEST_TIMEOUT = 180.0   # 3 minutes per LLM call
 STEP_TIMEOUT = 120.0      # 2 minutes per step (code execution)
 MAX_CODE_LENGTH = 8000    # Safety limit for code/setup_code
 MAX_EXPRESSIONS = 10      # Safety limit for get_variable_state
-RETRY_THRESHOLD = 0.5     # Skip retry if first attempt scores above this
-MIN_REWARD = 0.0001       # Minimum reward (avoid exact 0.0)
+MIN_REWARD = 0.1          # Minimum reward for any submission
 MAX_REWARD = 0.9999       # Maximum reward (avoid exact 1.0)
 
 VALID_ACTION_TYPES = {
@@ -610,12 +609,6 @@ def run_task(
         
         if reward > best_score:
             best_score = reward
-        
-        # Smart retry: skip if score is good enough or perfect
-        if reward >= RETRY_THRESHOLD:
-            if attempt < MAX_ATTEMPTS_PER_TASK:
-                print(f"[INFO] Skipping retry for {task_id} (score {reward:.4f} >= {RETRY_THRESHOLD})", flush=True)
-            break
     
     log_end(task_id, best_score)
     return best_score

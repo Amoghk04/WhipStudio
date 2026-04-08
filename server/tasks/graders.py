@@ -94,9 +94,9 @@ def sigmoid_score(value: float, center: float, steepness: float, higher_is_bette
     except OverflowError:
         # Return near-boundary values, not exact 0.0 or 1.0
         if higher_is_better:
-            return 0.9999 if value > center else 0.0001
+            return 0.9999 if value > center else 0.1
         else:
-            return 0.9999 if value < center else 0.0001
+            return 0.9999 if value < center else 0.1
 
 
 # Keep old function for backwards compatibility but mark deprecated
@@ -667,7 +667,7 @@ def grade_task6(result: RunResult) -> tuple[float, dict]:
     return final_score, breakdown
 
 
-MIN_SCORE = 0.0001  # Avoid exact 0.0
+MIN_SCORE = 0.1     # Minimum score for any submission
 MAX_SCORE = 0.9999  # Avoid exact 1.0
 
 
