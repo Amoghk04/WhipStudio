@@ -9,5 +9,5 @@ gradio>=4.0.0
 tqdm>=4.0.0
 scikit-learn
 matplotlib
-numpy<2
+numpy==1.26.4
 pyyaml
