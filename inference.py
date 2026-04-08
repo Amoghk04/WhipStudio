@@ -55,8 +55,8 @@ STEP_TIMEOUT = 120.0      # 2 minutes per step (code execution)
 MAX_CODE_LENGTH = 8000    # Safety limit for code/setup_code
 MAX_EXPRESSIONS = 10      # Safety limit for get_variable_state
 RETRY_THRESHOLD = 0.5     # Skip retry if first attempt scores above this
-MIN_REWARD = 0.005        # Minimum reward (avoid exact 0.0)
-MAX_REWARD = 0.995        # Maximum reward (avoid exact 1.0)
+MIN_REWARD = 0.0001       # Minimum reward (avoid exact 0.0)
+MAX_REWARD = 0.9999       # Maximum reward (avoid exact 1.0)
 
 VALID_ACTION_TYPES = {
     "execute_snippet", "inspect_tensor", "get_variable_state",

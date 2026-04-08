@@ -25,8 +25,8 @@ except ImportError:
     from server.tasks.graders import RunResult, score_task
 
 # Score bounds - hackathon requires strictly (0, 1) not [0, 1]
-MIN_SCORE = 0.005
-MAX_SCORE = 0.995
+MIN_SCORE = 0.0001
+MAX_SCORE = 0.9999
 
 # Disable OpenEnv's default web UI so /web can mirror the custom Gradio UI.
 os.environ["ENABLE_WEB_INTERFACE"] = "false"
