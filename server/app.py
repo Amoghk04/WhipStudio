@@ -33,7 +33,7 @@ app: FastAPI = create_app(
     MLDebugAction,
     MLDebugObservation,
     env_name="whipstudio",
-    max_concurrent_envs=4,
+    max_concurrent_envs=64,
 )
 
 
@@ -71,14 +71,72 @@ if not _has_route("/health", "GET"):
 
     @app.get("/health", include_in_schema=False)
     def health_get():
-        return {"status": "ok"}
+        try:
+            from .logging_config import get_metrics
+        except ImportError:
+            from server.logging_config import get_metrics
+        
+        metrics = get_metrics()
+        return {
+            "status": "ok",
+            "version": "1.1.0",
+            "tasks_available": 6,
+            "tools_available": 6,
+            "uptime_seconds": metrics.get_metrics().get("uptime_seconds", 0),
+            "ready": True,
+        }
 
 
 if not _has_route("/health", "POST"):
 
     @app.post("/health", include_in_schema=False)
     def health_post():
-        return {"status": "ok"}
+        return {"status": "ok", "version": "1.1.0"}
+
+
+@app.get("/metrics")
+def get_runtime_metrics():
+    """Return runtime metrics for monitoring."""
+    try:
+        from .logging_config import get_metrics
+    except ImportError:
+        from server.logging_config import get_metrics
+    
+    return get_metrics().get_metrics()
+
+
+@app.get("/session/state")
+def get_session_state(episode_id: str = ""):
+    """Get state for a specific session by episode_id."""
+    try:
+        from .environment import _get_session, MAX_TURNS_PER_EPISODE
+    except ImportError:
+        from server.environment import _get_session, MAX_TURNS_PER_EPISODE
+    
+    if not episode_id:
+        return {
+            "error": "episode_id query parameter required",
+            "usage": "/session/state?episode_id=<your-episode-id>"
+        }
+    
+    session = _get_session(episode_id)
+    if session is None:
+        return {
+            "error": f"No session found for episode_id '{episode_id}'",
+            "hint": "Call POST /reset first to start an episode"
+        }
+    
+    return {
+        "episode_id": session.episode_id,
+        "task_id": session.task_id,
+        "step": session.step_count,
+        "turn": session.step_count,  # Alias for compatibility
+        "submitted": session.submitted,
+        "done": session.submitted,  # Alias for compatibility
+        "best_reward": session.best_reward,
+        "max_turns": MAX_TURNS_PER_EPISODE,
+        "turns_remaining": max(0, MAX_TURNS_PER_EPISODE - session.step_count),
+    }
 
 
 @app.get("/reset")
@@ -88,6 +146,11 @@ def reset_liveness():
 
 @app.get("/tasks")
 def list_tasks():
+    try:
+        from .environment import TOOL_DEFINITIONS
+    except ImportError:
+        from server.environment import TOOL_DEFINITIONS
+    
     return {
         "tasks": [
             {"id": "task1", "name": "Broken training loop", "difficulty": "easy"},
@@ -98,10 +161,40 @@ def list_tasks():
             {"id": "task6", "name": "Input-Output mismatch", "difficulty": "hard"},
         ],
         "action_schema": {
-            "fixed_code": "string (required) — complete runnable Python script",
-            "explanation": "string (optional) — description of bugs found",
-            "attempt_number": "int 1-3 (optional) — which attempt this is",
+            "action_type": "string — one of: submit_fix, execute_snippet, inspect_tensor, run_training_probe, get_variable_state, inspect_diff",
+            "fixed_code": "string — for submit_fix: complete runnable Python script",
+            "code": "string — for execute_snippet/run_training_probe: Python code to run",
+            "setup_code": "string — for inspect_tensor/get_variable_state: setup code",
+            "target_expression": "string — for inspect_tensor: expression to inspect",
+            "expressions": "list[string] — for get_variable_state: expressions to evaluate",
+            "proposed_code": "string — for inspect_diff: proposed fix to diff",
+            "steps": "int 1-10 — for run_training_probe: number of steps",
         },
+        "tools": [t["name"] for t in TOOL_DEFINITIONS],
+        "max_turns_per_episode": 10,
+    }
+
+
+@app.get("/tools")
+def list_tools():
+    """Return available tools and their schemas for agent system prompts."""
+    try:
+        from .environment import TOOL_DEFINITIONS, MAX_TURNS_PER_EPISODE
+    except ImportError:
+        from server.environment import TOOL_DEFINITIONS, MAX_TURNS_PER_EPISODE
+    
+    return {
+        "tools": TOOL_DEFINITIONS,
+        "max_turns_per_episode": MAX_TURNS_PER_EPISODE,
+        "usage": {
+            "description": "Call step() with action_type set to the tool name. Tools return observations with episode_done=False. submit_fix is the terminal action.",
+            "example": {
+                "action": {
+                    "action_type": "execute_snippet",
+                    "code": "print('hello world')"
+                }
+            }
+        }
     }
 
 
@@ -123,12 +216,14 @@ def run_grader(payload: dict):
 @app.get("/baseline")
 async def run_baseline(request: Request):
     try:
-        from ..baseline_agent import SUPPORTED_MODEL_IDS, run_single_task
+        from ..baseline_agent import SUPPORTED_MODEL_IDS, run_single_task, TASK_CONFIG
     except ImportError:
-        from baseline_agent import SUPPORTED_MODEL_IDS, run_single_task
+        from baseline_agent import SUPPORTED_MODEL_IDS, run_single_task, TASK_CONFIG
 
     env_url = str(request.base_url).rstrip("/")
     model_id = request.query_params.get("model_id", "Qwen/Qwen2.5-Coder-32B-Instruct")
+    use_tools = request.query_params.get("use_tools", "true").lower() == "true"
+    
     if model_id not in SUPPORTED_MODEL_IDS:
         return {
             "error": f"Unsupported model_id '{model_id}'",
@@ -138,17 +233,20 @@ async def run_baseline(request: Request):
     results = {}
     task_scores = {}
     for task_id in ["task1", "task2", "task3", "task4", "task5", "task6"]:
+        task_cfg = TASK_CONFIG.get(task_id, {})
+        # Increase timeout for tool-using agent (more turns = more time)
+        timeout_secs = 180.0 if use_tools else 120.0
         try:
             score = await asyncio.wait_for(
                 run_single_task(task_id, env_url, model_id=model_id),
-                timeout=120.0,
+                timeout=timeout_secs,
             )
             results[task_id] = round(score, 4)
             task_scores[task_id] = round(score, 4)
         except TimeoutError:
             results[task_id] = 0.0
             task_scores[task_id] = 0.0
-            results[f"{task_id}_error"] = "timeout: task took longer than 120s"
+            results[f"{task_id}_error"] = f"timeout: task took longer than {timeout_secs}s"
         except httpx.HTTPError as exc:
             results[task_id] = 0.0
             task_scores[task_id] = 0.0
@@ -163,6 +261,8 @@ async def run_baseline(request: Request):
         "average": avg,
         "env_url": env_url,
         "model_id": model_id,
+        "use_tools": use_tools,
+        "task_config": TASK_CONFIG,
     }
 
 
@@ -170,12 +270,14 @@ async def run_baseline(request: Request):
 async def run_baseline_single(task_id: str, request: Request):
     """Run the baseline agent on a single task. Returns score + details."""
     try:
-        from ..baseline_agent import SUPPORTED_MODEL_IDS, run_single_task_detailed
+        from ..baseline_agent import SUPPORTED_MODEL_IDS, run_single_task_detailed, TASK_CONFIG
     except ImportError:
-        from baseline_agent import SUPPORTED_MODEL_IDS, run_single_task_detailed
+        from baseline_agent import SUPPORTED_MODEL_IDS, run_single_task_detailed, TASK_CONFIG
 
     env_url = str(request.base_url).rstrip("/")
     model_id = request.query_params.get("model_id", "Qwen/Qwen2.5-Coder-32B-Instruct")
+    use_tools = request.query_params.get("use_tools", "true").lower() == "true"
+    
     if model_id not in SUPPORTED_MODEL_IDS:
         return {
             "task_id": task_id,
@@ -185,22 +287,29 @@ async def run_baseline_single(task_id: str, request: Request):
             "supported_model_ids": SUPPORTED_MODEL_IDS,
         }
 
+    task_cfg = TASK_CONFIG.get(task_id, {"max_turns": 10})
+    # Longer timeout for tool-using agent
+    timeout_secs = 180.0 if use_tools else 120.0
+    
     try:
         result = await asyncio.wait_for(
-            run_single_task_detailed(task_id, env_url, model_id=model_id),
-            timeout=120.0,
+            run_single_task_detailed(task_id, env_url, model_id=model_id, use_tools=use_tools),
+            timeout=timeout_secs,
         )
         return {
             "task_id": task_id,
             "score": round(result["score"], 4),
             "status": "ok",
             "model_id": model_id,
+            "use_tools": use_tools,
+            "max_turns": task_cfg.get("max_turns", 10),
             "fixed_code": result.get("fixed_code", ""),
             "output": result.get("output", ""),
             "attempts": result.get("attempts", []),
+            "tool_history": result.get("tool_history", []),
         }
     except TimeoutError:
-        return {"task_id": task_id, "score": 0.0, "status": "timeout", "error": "Task took longer than 120s"}
+        return {"task_id": task_id, "score": 0.0, "status": "timeout", "error": f"Task took longer than {timeout_secs}s"}
     except Exception as exc:
         return {"task_id": task_id, "score": 0.0, "status": "error", "error": f"{exc.__class__.__name__}: {exc}"}
 

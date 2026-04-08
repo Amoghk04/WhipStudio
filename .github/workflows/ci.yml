@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r server/requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short
+
+      - name: Check imports
+        run: |
+          python -c "from server.app import app; print('Server imports OK')"
+          python -c "from models import MLDebugAction, MLDebugObservation; print('Models OK')"
+          python -c "from server.environment import MLDebugEnvironment; print('Environment OK')"
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install linters
+        run: pip install ruff
+
+      - name: Run ruff
+        run: ruff check server/ models.py --ignore E501
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker image
+        run: docker build -t whipstudio:test .
+      
+      - name: Start container
+        run: |
+          docker run -d -p 7860:7860 --name whipstudio-test whipstudio:test
+          sleep 10
+      
+      - name: Test health endpoint
+        run: |
+          curl -f http://localhost:7860/health || exit 1
+      
+      - name: Test tasks endpoint
+        run: |
+          curl -f http://localhost:7860/tasks || exit 1
+      
+      - name: Test tools endpoint
+        run: |
+          curl -f http://localhost:7860/tools || exit 1
+      
+      - name: Stop container
+        if: always()
+        run: docker stop whipstudio-test || true
+
+  openenv-validation:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate openenv.yaml
+        run: |
+          python -c "
+          import yaml
+          with open('openenv.yaml') as f:
+              config = yaml.safe_load(f)
+          assert config['spec_version'] == 2
+          assert config['name'] == 'whipstudio'
+          assert 'tasks' in config
+          task_ids = [t['id'] for t in config['tasks']]
+          assert 'task1' in task_ids
+          assert 'task2' in task_ids
+          assert 'task3' in task_ids
+          assert 'task4' in task_ids
+          assert 'task5' in task_ids
+          assert 'task6' in task_ids
+          print('OpenEnv config valid!')
+          print(f'Tasks: {task_ids}')
+          "
+      
+      - name: Validate models
+        run: |
+          python -c "
+          from models import MLDebugAction, MLDebugObservation
+          
+          # Test action types
+          for action_type in ['submit_fix', 'execute_snippet', 'inspect_tensor', 
+                              'run_training_probe', 'get_variable_state', 'inspect_diff']:
+              action = MLDebugAction(action_type=action_type)
+              print(f'✓ {action_type} action valid')
+          
+          # Test observation
+          obs = MLDebugObservation()
+          print('✓ Observation model valid')
+          "

@@ -58,20 +58,24 @@ tasks:
   - id: task1
     name: Broken training loop
     difficulty: easy
-    max_steps: 3
+    max_steps: 8
   - id: task2
     name: Silent NaN loss
     difficulty: medium
-    max_steps: 3
+    max_steps: 10
   - id: task3
     name: OOM and data leakage
     difficulty: hard
-    max_steps: 3
+    max_steps: 12
   - id: task4
     name: Wrong loss function
     difficulty: medium
-    max_steps: 3
+    max_steps: 10
   - id: task5
     name: Frozen backbone
     difficulty: medium
-    max_steps: 3
+    max_steps: 10
+  - id: task6
+    name: Mixed precision instability
+    difficulty: hard
+    max_steps: 15

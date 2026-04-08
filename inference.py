@@ -43,7 +43,7 @@ Rules:
 - Keep all torch.manual_seed() calls intact.
 - Wrap all metrics in ##METRICS_START## and ##METRICS_END## markers.""".strip()
 
-TASK_IDS = ["task1", "task2", "task3", "task4", "task5"]
+TASK_IDS = ["task1", "task2", "task3", "task4", "task5", "task6"]
 
 MAX_ATTEMPTS_PER_TASK = 3
 REQUEST_TIMEOUT = 180.0  # 3 minutes per LLM call
@@ -134,6 +134,7 @@ class WhipStudioClient:
     def __init__(self, env_url: str):
         self.env_url = env_url.rstrip("/")
         self.timeout = httpx.Timeout(STEP_TIMEOUT, connect=10.0)
+        self.episode_id = ""  # Track episode_id for session persistence
     
     def health_check(self) -> bool:
         """Check if the environment is reachable."""
@@ -153,56 +154,38 @@ class WhipStudioClient:
             )
             resp.raise_for_status()
             data = resp.json()
-            return data.get("observation", data)
+            obs = data.get("observation", data)
+            self.episode_id = obs.get("episode_id", "")  # Store episode_id
+            return obs
     
     def step(self, fixed_code: str, attempt_number: int = 1) -> dict:
         """Submit a fix and get the result."""
         payload = {
             "action": {
+                "action_type": "submit_fix",
                 "fixed_code": fixed_code,
                 "attempt_number": attempt_number,
+                "episode_id": self.episode_id,  # Include for session tracking
             }
         }
         
         with httpx.Client(timeout=self.timeout) as client:
             resp = client.post(f"{self.env_url}/step", json=payload)
-            
-            # Handle potential 422 from different API versions
-            if resp.status_code == 422:
-                resp = client.post(
-                    f"{self.env_url}/step",
-                    json={
-                        "fixed_code": fixed_code,
-                        "attempt_number": attempt_number,
-                    }
-                )
-            
             resp.raise_for_status()
             return resp.json()
     
     def get_tasks(self) -> list[str]:
-        """Get list of available tasks (returns task IDs only)."""
+        """Get list of available tasks."""
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 resp = client.get(f"{self.env_url}/tasks")
                 if resp.status_code == 200:
                     data = resp.json()
-                    if isinstance(data, list):
-                        # Extract task IDs from task objects
-                        task_ids = []
-                        for t in data:
-                            if isinstance(t, dict):
-                                task_ids.append(t.get("id", str(t)))
-                            else:
-                                task_ids.append(str(t))
-                        return task_ids
-                    elif isinstance(data, dict):
+                    if isinstance(data, dict):
                         tasks = data.get("tasks", [])
                         return [t.get("id") if isinstance(t, dict) else str(t) for t in tasks]
         except Exception as e:
-            print(f"[WARNING] Could not fetch tasks from /tasks endpoint: {e}", file=sys.stderr)
-        
-        # Fallback to default task IDs
+            print(f"[WARNING] Could not fetch tasks: {e}", file=sys.stderr)
         return TASK_IDS
 
 
@@ -226,15 +209,9 @@ Previous execution output (if any):
 Previous score: {last_reward}""".strip()
 
 
-def run_task(
-    env: WhipStudioClient,
-    llm_client: OpenAI,
-    model: str,
-    task_id: str,
-) -> float:
+def run_task(env: WhipStudioClient, llm_client: OpenAI, model: str, task_id: str) -> float:
     """Run inference on a single task. Returns the best score achieved."""
     
-    # Ensure task_id is a string
     if isinstance(task_id, dict):
         task_id = task_id.get("id", str(task_id))
     
@@ -243,52 +220,47 @@ def run_task(
     try:
         obs = env.reset(task_id)
     except Exception as e:
-        error_msg = str(e)
-        print(f"[ERROR] Failed to reset {task_id}: {error_msg}", file=sys.stderr)
-        
-        # Check if it's a 500 error - likely environment issue
-        if "500" in error_msg:
-            print(f"[ERROR] HF Space returned 500 - the environment may be starting up or having issues", file=sys.stderr)
-            print(f"[ERROR] Try visiting https://your-space.hf.space in a browser first", file=sys.stderr)
-        
+        print(f"[ERROR] Failed to reset {task_id}: {e}", file=sys.stderr)
         log_end(task_id, 0.0)
         return 0.0
     
     best_score = 0.0
     
-    for step in range(1, MAX_ATTEMPTS_PER_TASK + 1):
-        prompt = build_prompt(obs)
+    for attempt in range(1, MAX_ATTEMPTS_PER_TASK + 1):
+        # Reset for each attempt (except first)
+        if attempt > 1:
+            try:
+                obs = env.reset(task_id)
+            except Exception as e:
+                print(f"[ERROR] Reset failed for attempt {attempt}: {e}", file=sys.stderr)
+                continue
         
-        # Generate fix
+        prompt = build_prompt(obs)
         fixed_code = generate_fix(llm_client, model, prompt)
         
         if not fixed_code.strip():
-            log_step(task_id, step, "empty_response", 0.0, False)
+            log_step(task_id, attempt, "empty_response", 0.0, False)
             continue
         
-        # Submit fix
         try:
-            result = env.step(fixed_code, attempt_number=step)
+            result = env.step(fixed_code, attempt_number=attempt)
             
             reward = float(result.get("reward", 0.0) or 0.0)
             done = result.get("done", False)
             obs = result.get("observation", obs)
             
-            # Track best score
             if reward > best_score:
                 best_score = reward
             
-            # Log step
             code_len = len(fixed_code)
-            log_step(task_id, step, f"submit_fix({code_len}chars)", reward, done)
+            log_step(task_id, attempt, f"submit_fix({code_len}chars)", reward, done)
             
-            # Early exit if task is solved
-            if done or reward >= 0.95:
+            if reward >= 0.95:
                 break
                 
         except Exception as e:
-            print(f"[ERROR] Step failed for {task_id}: {e}", file=sys.stderr)
-            log_step(task_id, step, "step_error", 0.0, False)
+            print(f"[ERROR] Step failed: {e}", file=sys.stderr)
+            log_step(task_id, attempt, "step_error", 0.0, False)
     
     log_end(task_id, best_score)
     return best_score
@@ -321,20 +293,15 @@ def main():
     
     print("[INFO] Environment is reachable", flush=True)
     
-    # Initialize LLM client
     llm_client = get_openai_client()
     model = get_model_name()
     print(f"[INFO] Using model: {model}", flush=True)
     
-    # Determine which tasks to run
-    if args.tasks:
-        task_ids = args.tasks
-    else:
-        task_ids = env.get_tasks()
-    
+    # Determine tasks
+    task_ids = args.tasks if args.tasks else env.get_tasks()
     print(f"[INFO] Running tasks: {task_ids}", flush=True)
     
-    # Run inference on all tasks
+    # Run inference
     start_time = time.time()
     scores = {}
     
@@ -342,8 +309,8 @@ def main():
         task_start = time.time()
         score = run_task(env, llm_client, model, task_id)
         scores[task_id] = score
-        task_elapsed = time.time() - task_start
-        print(f"[INFO] {task_id} completed in {task_elapsed:.1f}s with score {score:.4f}", flush=True)
+        elapsed = time.time() - task_start
+        print(f"[INFO] {task_id} completed in {elapsed:.1f}s with score {score:.4f}", flush=True)
     
     # Summary
     total_elapsed = time.time() - start_time
@@ -356,12 +323,9 @@ def main():
     print(f"  Average score: {avg_score:.4f}", flush=True)
     print("  Per-task scores:", flush=True)
     for tid, score in scores.items():
-        print(f"    {tid}: {score:.4f}", flush=True)
+        status = "✓" if score >= 0.7 else "○"
+        print(f"    {status} {tid}: {score:.4f}", flush=True)
     print("=" * 50, flush=True)
-    
-    # Exit with error if average score is too low (optional)
-    if avg_score < 0.1:
-        print("[WARNING] Average score below 0.1 threshold", file=sys.stderr)
 
 
 if __name__ == "__main__":

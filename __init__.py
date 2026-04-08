@@ -1,6 +1,5 @@
-"""ML Debug OpenEnv package."""
+"""WhipStudio - ML Debug OpenEnv Environment."""
 
 from .models import MLDebugAction, MLDebugObservation
-from .client import MLDebugEnv
 
-__all__ = ["MLDebugAction", "MLDebugObservation", "MLDebugEnv"]
+__all__ = ["MLDebugAction", "MLDebugObservation"]

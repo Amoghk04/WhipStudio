@@ -1,6 +1,6 @@
 ---
 title: WhipStudio Env
-emoji: 🤖
+emoji: 🔧
 colorFrom: blue
 colorTo: green
 sdk: docker
@@ -8,45 +8,103 @@ app_port: 7860
 base_path: /ui/
 ---
 
-# ML Debug Environment
+# 🔧 WhipStudio — ML Debug Arena
 
 An OpenEnv-compatible RL environment where agents debug broken PyTorch training scripts.
+Features **6 debugging tasks** with continuous reward scoring (0.0-1.0).
 
-## Environment Description
-The agent receives a broken Python training script and must return a corrected version.
-Five tasks simulate real ML production bugs with increasing complexity.
+## 🎯 Overview
 
-## Action Space
-- fixed_code (str, required): Complete corrected Python script
-- explanation (str, optional): Description of bugs found
-- attempt_number (int, 1-3): Which fix attempt this is
+WhipStudio presents agents with broken ML training code and challenges them to fix it.
+Agents must diagnose bugs, fix all issues, and meet performance thresholds.
 
-## Observation Space
-- task_id: Which task (task1/task2/task3)
-- task_description: Plain English instructions
-- buggy_code: The broken script
-- error_log: stdout+stderr from previous attempt
-- last_reward: Score from previous attempt (0.0 on first step)
-- metrics: {exit_code, elapsed_seconds, timed_out, step, best_reward_so_far}
+## 📋 Tasks
 
-## Reward Function
-Continuous score 0.0–1.0. Partial credit for every improvement.
-See `server/tasks/graders.py` for per-task scoring logic.
-
-## Tasks
 | Task | Difficulty | Bug Type |
-|------|-----------|----------|
-| task1 | Easy | Wrong optimizer order + bad learning rate |
-| task2 | Medium | Silent NaN from log(0) numerical instability |
-| task3 | Hard | OOM memory leak + train/val data leakage |
+|------|------------|----------|
+| task1 | Easy | Wrong optimizer order + bad LR |
+| task2 | Medium | Silent NaN from log(0) |
+| task3 | Hard | OOM leak + data leakage |
 | task4 | Medium | Wrong loss function |
 | task5 | Medium | Frozen backbone |
+| task6 | Hard | IO mismatch (4 bugs) |
 
-## Setup
+## 🚀 Quick Start
+
+### Run Locally
+
 ```bash
-pip install openenv-core
+# Install dependencies
+pip install -r server/requirements.txt
+
+# Start server
 uvicorn server.app:app --host 0.0.0.0 --port 7860
 ```
 
-## Endpoints
-POST /reset, POST /step, GET /state, GET /tasks, POST /grader, GET /baseline
+### Run Inference
+
+```bash
+# Set required environment variables
+export API_BASE_URL="https://api-inference.huggingface.co/v1"
+export MODEL_NAME="Qwen/Qwen2.5-Coder-32B-Instruct"
+export HF_TOKEN="your_token"
+
+# Run inference
+python inference.py --env-url http://localhost:7860
+```
+
+### Docker
+
+```bash
+docker build -t whipstudio .
+docker run -p 7860:7860 whipstudio
+```
+
+## 📡 API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/reset` | POST | Start new episode with `{"task_id": "task1"}` |
+| `/step` | POST | Submit fix with `{"action": {"action_type": "submit_fix", "fixed_code": "..."}}` |
+| `/state` | GET | Get current session state |
+| `/tasks` | GET | List available tasks |
+| `/health` | GET | Health check (returns 200) |
+
+## 📊 Inference Output Format
+
+The `inference.py` script emits structured logs:
+
+```
+[START] task_id=task1
+[STEP] task_id=task1 step=1 action=submit_fix(1234chars) reward=0.4500 done=true
+[END] task_id=task1 final_score=0.4500
+```
+
+## 🏗️ Project Structure
+
+```
+whipstudio/
+├── server/
+│   ├── app.py              # FastAPI application
+│   ├── environment.py      # OpenEnv environment
+│   └── tasks/              # Task definitions + graders
+├── inference.py            # Hackathon inference script
+├── models.py               # Pydantic schemas
+├── openenv.yaml            # OpenEnv specification
+├── Dockerfile
+└── README.md
+```
+
+## ✅ Hackathon Compliance
+
+- ✅ HF Space deploys and responds to `/health` (200)
+- ✅ OpenEnv spec compliance (`openenv.yaml`, typed models, `/reset`, `/step`, `/state`)
+- ✅ Dockerfile builds
+- ✅ `inference.py` uses OpenAI client with `API_BASE_URL`, `MODEL_NAME`, `HF_TOKEN`
+- ✅ Structured stdout logs: `[START]`, `[STEP]`, `[END]`
+- ✅ 6 tasks with graders returning scores in 0.0-1.0 range
+- ✅ Runtime < 20 min, runs on vcpu=2, memory=8gb
+
+## 📝 License
+
+Apache-2.0
