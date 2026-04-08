@@ -122,22 +122,24 @@ Rules:
 
 # ── Logging Helpers ───────────────────────────────────────────────────────────
 
-def log_start(task_id: str) -> None:
+def log_start(task_id: str, env_name: str, model: str) -> None:
     """Emit [START] log for a task."""
-    print(f"[START] task_id={task_id}", flush=True)
+    print(f"[START] task={task_id} env={env_name} model={model}", flush=True)
 
 
-def log_step(task_id: str, turn: int, action_summary: str, reward: float, done: bool) -> None:
-    """Emit [STEP] log for a step within a task."""
+def log_step(step: int, action_summary: str, reward: float, done: bool, error: Optional[str] = None) -> None:
+    """Emit [STEP] log for a step."""
+    error_str = error if error else "null"
     print(
-        f"[STEP] task_id={task_id} step={turn} action={action_summary} reward={reward:.4f} done={str(done).lower()}",
+        f"[STEP] step={step} action={action_summary} reward={reward:.2f} done={str(done).lower()} error={error_str}",
         flush=True
     )
 
 
-def log_end(task_id: str, final_score: float) -> None:
+def log_end(success: bool, steps: int, rewards: list[float]) -> None:
     """Emit [END] log for a task."""
-    print(f"[END] task_id={task_id} final_score={final_score:.4f}", flush=True)
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}", flush=True)
 
 
 # ── LLM Client ────────────────────────────────────────────────────────────────
@@ -393,10 +395,10 @@ def run_tool_agent(
     task_id: str,
     obs: dict,
     max_turns: int = 8,
-) -> tuple[float, str]:
+) -> tuple[float, str, list[float]]:
     """
     Run multi-turn tool-calling agent loop within a single episode.
-    Returns (best_reward, best_fixed_code).
+    Returns (best_reward, best_fixed_code, step_rewards).
     """
     buggy_code = obs.get("buggy_code", "")
     task_description = obs.get("task_description", "")
@@ -404,6 +406,7 @@ def run_tool_agent(
     tool_history: list[str] = []  # Rolling context for LLM
     best_reward = 0.0
     best_code = ""
+    step_rewards: list[float] = []  # Track all step rewards for [END] line
     
     for turn in range(1, max_turns + 1):
         turns_remaining = max_turns - turn
@@ -482,18 +485,20 @@ Analyze and decide your next action. Respond with JSON only.""".strip()
             continue
         
         obs_result = result.get("observation", {})
-        reward = float(result.get("reward", 0.0) or 0.0)
+        reward = float(result.get("reward", 0) or 0)
         done = result.get("done", False) or obs_result.get("episode_done", False)
+        step_error = obs_result.get("error") or None
         
         # Format and store result
         tool_result = format_tool_result(obs_result, action_type)
         tool_history.append(f"Reasoning: {reasoning}\n{tool_result}")
         
+        # Track reward for this step
+        step_rewards.append(reward)
+        
         # Log the step
-        if action_type == "submit_fix":
-            log_step(task_id, turn, f"submit_fix(reward={reward:.2f})", reward, done)
-        else:
-            log_step(task_id, turn, action_type, reward, done)
+        action_str = f"submit_fix(reward={reward:.2f})" if action_type == "submit_fix" else action_type
+        log_step(turn, action_str, reward, done, step_error)
         
         # Track best
         if action_type == "submit_fix":
@@ -507,7 +512,7 @@ Analyze and decide your next action. Respond with JSON only.""".strip()
         if done:
             break
     
-    return best_reward, best_code
+    return best_reward, best_code, step_rewards
 
 
 def run_simple_agent(
@@ -516,10 +521,10 @@ def run_simple_agent(
     model: str,
     task_id: str,
     obs: dict,
-) -> tuple[float, str]:
+) -> tuple[float, str, list[float]]:
     """
     Run simple submit-only agent (legacy mode).
-    Returns (reward, fixed_code).
+    Returns (reward, fixed_code, step_rewards).
     """
     buggy_code = obs.get("buggy_code", "")
     task_description = obs.get("task_description", "")
@@ -546,18 +551,24 @@ Previous execution output (if any):
         fixed_code = response.choices[0].message.content or ""
         fixed_code = strip_markdown_fences(fixed_code)
     except Exception as e:
-        return 0.0, ""
+        print(f"[ERROR] LLM call failed: {e}", file=sys.stderr)
+        return 0.0, "", []
     
     if not fixed_code.strip():
-        return 0.0, ""
+        return 0.0, "", []
     
     try:
         action = {"action_type": "submit_fix", "fixed_code": fixed_code}
         result = env.step(action)
-        reward = float(result.get("reward", 0.0) or 0.0)
-        return reward, fixed_code
+        reward = float(result.get("reward", 0) or 0)
+        obs_result = result.get("observation", {})
+        done = result.get("done", False) or obs_result.get("episode_done", False)
+        step_error = obs_result.get("error") or None
+        log_step(1, f"submit_fix(reward={reward:.2f})", reward, done, step_error)
+        return reward, fixed_code, [reward]
     except Exception as e:
-        return 0.0, ""
+        print(f"[ERROR] Step failed: {e}", file=sys.stderr)
+        return 0.0, "", []
 
 
 # ── Main Task Runner ──────────────────────────────────────────────────────────
@@ -577,13 +588,14 @@ def run_task(
     if isinstance(task_id, dict):
         task_id = task_id.get("id", str(task_id))
     
-    log_start(task_id)
+    log_start(task_id, "whipstudio", model)
     
     # Get task-specific config
     config = TASK_CONFIG.get(task_id, {"max_turns": max_turns})
     task_max_turns = min(max_turns, config.get("max_turns", max_turns))
     
     best_score = MIN_REWARD  # Start with minimum, not 0.0
+    all_step_rewards: list[float] = []
     
     for attempt in range(1, MAX_ATTEMPTS_PER_TASK + 1):
         try:
@@ -592,10 +604,11 @@ def run_task(
             continue
         
         if use_tools:
-            reward, _ = run_tool_agent(env, llm_client, model, task_id, obs, task_max_turns)
+            reward, _, step_rewards = run_tool_agent(env, llm_client, model, task_id, obs, task_max_turns)
         else:
-            reward, _ = run_simple_agent(env, llm_client, model, task_id, obs)
-            log_step(task_id, attempt, f"submit_fix(reward={reward:.2f})", reward, reward >= 0.95)
+            reward, _, step_rewards = run_simple_agent(env, llm_client, model, task_id, obs)
+        
+        all_step_rewards.extend(step_rewards)
         
         # Clamp reward to avoid exact 0.0 or 1.0
         reward = clamp_reward(reward)
@@ -603,7 +616,8 @@ def run_task(
         if reward > best_score:
             best_score = reward
     
-    log_end(task_id, best_score)
+    success = best_score >= 0.7
+    log_end(success, len(all_step_rewards), all_step_rewards)
     return best_score
 
 
@@ -639,17 +653,24 @@ def main():
     
     use_tools = not args.no_tools
     
+    # Initialize clients (all info to stderr — stdout is reserved for [START]/[STEP]/[END])
+    print(f"[INFO] Connecting to environment at {args.env_url}", file=sys.stderr, flush=True)
+    print(f"[INFO] Mode: {'tool-calling agent' if use_tools else 'simple submit-only'}", file=sys.stderr, flush=True)
+    
     env = WhipStudioClient(args.env_url)
     
     if not env.health_check():
         sys.exit(1)
     
+    print("[INFO] Environment is reachable", file=sys.stderr, flush=True)
     
     llm_client = get_openai_client()
     model = get_model_name()
+    print(f"[INFO] Using model: {model}", file=sys.stderr, flush=True)
     
     # Determine tasks
     task_ids = args.tasks if args.tasks else env.get_tasks()
+    print(f"[INFO] Running tasks: {task_ids}", file=sys.stderr, flush=True)
     
     # Run inference
     start_time = time.time()
@@ -660,22 +681,16 @@ def main():
         score = run_task(env, llm_client, model, task_id, use_tools, args.max_turns)
         scores[task_id] = score
         elapsed = time.time() - task_start
+        print(f"[INFO] {task_id} completed in {elapsed:.1f}s with score {score:.4f}", file=sys.stderr, flush=True)
     
-    # Summary
+    # Summary (to stderr)
     total_elapsed = time.time() - start_time
     avg_score = sum(scores.values()) / len(scores) if scores else 0.0
     
-    print("\n" + "=" * 50, flush=True)
-    print("SUMMARY", flush=True)
-    print(f"  Mode: {'tool-calling' if use_tools else 'simple'}", flush=True)
-    print(f"  Tasks completed: {len(scores)}", flush=True)
-    print(f"  Total time: {total_elapsed:.1f}s", flush=True)
-    print(f"  Average score: {avg_score:.4f}", flush=True)
-    print("  Per-task scores:", flush=True)
+    print(f"[INFO] Tasks completed: {len(scores)}, Total time: {total_elapsed:.1f}s, Average score: {avg_score:.4f}", file=sys.stderr, flush=True)
     for tid, score in scores.items():
         status = "✓" if score >= 0.7 else "○"
-        print(f"    {status} {tid}: {score:.4f}", flush=True)
-    print("=" * 50, flush=True)
+        print(f"[INFO]   {status} {tid}: {score:.4f}", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":
