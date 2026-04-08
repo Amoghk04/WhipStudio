@@ -154,7 +154,7 @@ def list_tasks():
         "tasks": [
             {"id": "task1", "name": "Broken training loop", "difficulty": "easy"},
             {"id": "task2", "name": "Silent NaN loss", "difficulty": "medium"},
-            {"id": "task3", "name": "OOM and data leakage", "difficulty": "hard"},
+            {"id": "task3", "name": "Label inversion", "difficulty": "medium"},
             {"id": "task4", "name": "Wrong loss function", "difficulty": "medium"},
             {"id": "task5", "name": "Frozen backbone", "difficulty": "medium"},
             {"id": "task6", "name": "Input-Output mismatch", "difficulty": "hard"},

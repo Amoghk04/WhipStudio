@@ -24,7 +24,7 @@ Agents must diagnose bugs, fix all issues, and meet performance thresholds.
 |------|------------|----------|
 | task1 | Easy | Wrong optimizer order + bad LR |
 | task2 | Medium | Silent NaN from log(0) |
-| task3 | Hard | OOM leak + data leakage |
+| task3 | Medium | Label inversion |
 | task4 | Medium | Wrong loss function |
 | task5 | Medium | Frozen backbone |
 | task6 | Hard | IO mismatch (4 bugs) |

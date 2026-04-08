@@ -13,7 +13,7 @@ import httpx
 TASK_CONFIG = {
     "task1": {"difficulty": "easy", "max_turns": 8, "description": "Broken training loop"},
     "task2": {"difficulty": "medium", "max_turns": 10, "description": "Silent NaN loss"},
-    "task3": {"difficulty": "hard", "max_turns": 12, "description": "OOM and data leakage"},
+    "task3": {"difficulty": "medium", "max_turns": 12, "description": "Label inversion"},
     "task4": {"difficulty": "medium", "max_turns": 10, "description": "Wrong loss function"},
     "task5": {"difficulty": "medium", "max_turns": 10, "description": "Frozen backbone"},
     "task6": {"difficulty": "hard", "max_turns": 15, "description": "Input-Output mismatch"},

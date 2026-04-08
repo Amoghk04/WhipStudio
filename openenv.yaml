@@ -11,7 +11,7 @@ metadata:
   version: "1.1.0"
   description: >
     OpenEnv-compatible RL environment where agents debug broken PyTorch
-    training scripts across five tasks with continuous reward scoring.
+    training scripts across six tasks with continuous reward scoring.
   author: Amogh-kal1
   license: Apache-2.0
   repository: Amogh-kal1/whipstudio
@@ -64,8 +64,8 @@ tasks:
     difficulty: medium
     max_steps: 10
   - id: task3
-    name: OOM and data leakage
-    difficulty: hard
+    name: Label inversion
+    difficulty: medium
     max_steps: 12
   - id: task4
     name: Wrong loss function
@@ -76,6 +76,6 @@ tasks:
     difficulty: medium
     max_steps: 10
   - id: task6
-    name: Mixed precision instability
+    name: Input-Output mismatch
     difficulty: hard
     max_steps: 15

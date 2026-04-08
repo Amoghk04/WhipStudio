@@ -31,10 +31,10 @@ TASK_INFO = {
         "hints": "The loss computation uses torch.log() without clamping — pred can be 0.",
     },
     "task3": {
-        "name": "OOM + Data Leakage",
-        "difficulty": "🔴 Hard",
-        "description": "Fix memory leak (graph accumulation) AND train/val data leakage.",
-        "hints": "Two bugs: total_loss accumulates graph, and augmentation is applied before split.",
+        "name": "Label Inversion",
+        "difficulty": "🟡 Medium",
+        "description": "Training uses inverted labels (1 - y), causing ~50% accuracy. Fix the label bug.",
+        "hints": "The loss is computed with criterion(out, 1 - yb) — should be criterion(out, yb).",
     },
     "task4": {
         "name": "Wrong Loss Function",
@@ -1130,7 +1130,7 @@ Each tool call uses one turn (max 10 per episode). Tools help you:
         TASK_NAMES = {
             "task1": "🟢 Broken Training Loop",
             "task2": "🟡 Silent NaN Loss",
-            "task3": "🔴 OOM + Data Leakage",
+            "task3": "� Label Inversion",
             "task4": "🟡 Wrong Loss Function",
             "task5": "🟡 Frozen Backbone",
             "task6": "🔴 Input-Output Mismatch",
