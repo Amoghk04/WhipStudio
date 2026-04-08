@@ -3,13 +3,12 @@ import os
 import sys
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
-from fastapi.responses import HTMLResponse
-
+from fastapi.responses import HTMLResponse, RedirectResponse
 from openenv.core.env_server.http_server import create_app
 
 _project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -109,9 +108,9 @@ def get_runtime_metrics():
 def get_session_state(episode_id: str = ""):
     """Get state for a specific session by episode_id."""
     try:
-        from .environment import _get_session, MAX_TURNS_PER_EPISODE
+        from .environment import MAX_TURNS_PER_EPISODE, _get_session
     except ImportError:
-        from server.environment import _get_session, MAX_TURNS_PER_EPISODE
+        from server.environment import MAX_TURNS_PER_EPISODE, _get_session
     
     if not episode_id:
         return {
@@ -179,9 +178,9 @@ def list_tasks():
 def list_tools():
     """Return available tools and their schemas for agent system prompts."""
     try:
-        from .environment import TOOL_DEFINITIONS, MAX_TURNS_PER_EPISODE
+        from .environment import MAX_TURNS_PER_EPISODE, TOOL_DEFINITIONS
     except ImportError:
-        from server.environment import TOOL_DEFINITIONS, MAX_TURNS_PER_EPISODE
+        from server.environment import MAX_TURNS_PER_EPISODE, TOOL_DEFINITIONS
     
     return {
         "tools": TOOL_DEFINITIONS,
@@ -216,9 +215,9 @@ def run_grader(payload: dict):
 @app.get("/baseline")
 async def run_baseline(request: Request):
     try:
-        from ..baseline_agent import SUPPORTED_MODEL_IDS, run_single_task, TASK_CONFIG
+        from ..baseline_agent import SUPPORTED_MODEL_IDS, TASK_CONFIG, run_single_task
     except ImportError:
-        from baseline_agent import SUPPORTED_MODEL_IDS, run_single_task, TASK_CONFIG
+        from baseline_agent import SUPPORTED_MODEL_IDS, TASK_CONFIG, run_single_task
 
     env_url = str(request.base_url).rstrip("/")
     model_id = request.query_params.get("model_id", "Qwen/Qwen2.5-Coder-32B-Instruct")
@@ -270,9 +269,17 @@ async def run_baseline(request: Request):
 async def run_baseline_single(task_id: str, request: Request):
     """Run the baseline agent on a single task. Returns score + details."""
     try:
-        from ..baseline_agent import SUPPORTED_MODEL_IDS, run_single_task_detailed, TASK_CONFIG
+        from ..baseline_agent import (
+            SUPPORTED_MODEL_IDS,
+            TASK_CONFIG,
+            run_single_task_detailed,
+        )
     except ImportError:
-        from baseline_agent import SUPPORTED_MODEL_IDS, run_single_task_detailed, TASK_CONFIG
+        from baseline_agent import (
+            SUPPORTED_MODEL_IDS,
+            TASK_CONFIG,
+            run_single_task_detailed,
+        )
 
     env_url = str(request.base_url).rstrip("/")
     model_id = request.query_params.get("model_id", "Qwen/Qwen2.5-Coder-32B-Instruct")

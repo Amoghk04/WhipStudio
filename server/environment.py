@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Any, Optional
+from typing import Optional
 from uuid import uuid4
 
 from openenv.core.env_server.interfaces import Environment
@@ -22,7 +22,7 @@ from openenv.core.env_server.types import State
 
 try:
     from ..models import MLDebugAction, MLDebugObservation
-    from .sandbox import execute_code, strip_markdown_code, SAFE_ENV
+    from .sandbox import SAFE_ENV, execute_code, strip_markdown_code
     from .tasks import (
         task1_broken_loop,
         task2_nan_loss,
@@ -31,10 +31,10 @@ try:
         task5_frozen_backbone,
         task6_io_mismatch,
     )
-    from .tasks.graders import parse_losses, parse_val_accs, score_task, RunResult
+    from .tasks.graders import RunResult, parse_losses, parse_val_accs, score_task
 except ImportError:
     from models import MLDebugAction, MLDebugObservation
-    from server.sandbox import execute_code, strip_markdown_code, SAFE_ENV
+    from server.sandbox import SAFE_ENV, execute_code, strip_markdown_code
     from server.tasks import (
         task1_broken_loop,
         task2_nan_loss,
@@ -43,7 +43,7 @@ except ImportError:
         task5_frozen_backbone,
         task6_io_mismatch,
     )
-    from server.tasks.graders import parse_losses, parse_val_accs, score_task, RunResult
+    from server.tasks.graders import parse_losses, parse_val_accs, score_task
 
 
 # ── Task Registry ──────────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ def check_code_security(code: str) -> tuple[bool, str]:
     """
     try:
         tree = ast.parse(code)
-    except SyntaxError as e:
+    except SyntaxError:
         return True, ""  # Let it fail at runtime with proper error
     
     for node in ast.walk(tree):
@@ -555,6 +555,7 @@ def tool_inspect_diff(original_code: str, proposed_code: str, turn: int) -> MLDe
 
 from dataclasses import dataclass, field
 from typing import Dict
+
 
 @dataclass
 class SessionState:

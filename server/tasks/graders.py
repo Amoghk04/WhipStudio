@@ -1,6 +1,6 @@
+import ast
 import math
 import re
-import ast
 from dataclasses import dataclass
 
 

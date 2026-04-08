@@ -1,0 +1,14 @@
+[lint]
+# 1. Enable specific rule categories (e.g., Pyflakes, pycodestyle, Isort)
+select = ["E", "F", "I"]
+
+# 2. Ignore specific rules globally
+# E402: Module level import not at top of file
+# F401: Unused import (if you prefer to manage this manually)
+# E501: Line too long (useful if you want to rely on the formatter)
+extend-ignore = [
+    "E402",
+    "F401",
+    "E402",
+    "F841"
+]

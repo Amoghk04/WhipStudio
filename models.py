@@ -1,7 +1,7 @@
 from typing import Literal, Optional
+
 from openenv.core.env_server.types import Action, Observation
 from pydantic import Field
-
 
 # ── Action Types ───────────────────────────────────────────────────────────
 
