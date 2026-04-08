@@ -136,10 +136,10 @@ def log_step(step: int, action_summary: str, reward: float, done: bool, error: O
     )
 
 
-def log_end(success: bool, steps: int, rewards: list[float]) -> None:
+def log_end(success: bool, steps: int, score: float, rewards: list[float]) -> None:
     """Emit [END] log for a task."""
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}", flush=True)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
 
 # ── LLM Client ────────────────────────────────────────────────────────────────
@@ -617,7 +617,7 @@ def run_task(
             best_score = reward
     
     success = best_score >= 0.7
-    log_end(success, len(all_step_rewards), all_step_rewards)
+    log_end(success, len(all_step_rewards), best_score, all_step_rewards)
     return best_score
 
 
