@@ -74,7 +74,7 @@ def log_end(task_id: str, final_score: float) -> None:
 
 def get_openai_client() -> OpenAI:
     """Initialize OpenAI-compatible client from environment variables."""
-    api_base = os.environ.get("API_BASE_URL")
+    api_base = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
     api_key = os.environ.get("HF_TOKEN") or os.environ.get("OPENAI_API_KEY")
     
     if not api_key:
@@ -84,7 +84,7 @@ def get_openai_client() -> OpenAI:
     
     # Default to OpenAI API if no base URL specified
     if not api_base:
-        api_base = "https://api.openai.com/v1"
+        api_base = "https://router.huggingface.co/v1"
     
     return OpenAI(
         base_url=api_base,
@@ -95,7 +95,7 @@ def get_openai_client() -> OpenAI:
 
 def get_model_name() -> str:
     """Get model name from environment or use default."""
-    return os.environ.get("MODEL_NAME", "gpt-4o-mini")
+    return os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-Coder-32B-Instruct")
 
 
 def generate_fix(client: OpenAI, model: str, prompt: str) -> str:
@@ -272,7 +272,7 @@ def main():
     )
     parser.add_argument(
         "--env-url",
-        default=os.environ.get("ENV_URL", "http://localhost:7860"),
+        default=os.environ.get("ENV_URL", "https://amogh-kal1-whipstudio.hf.space"),
         help="URL of the WhipStudio environment"
     )
     parser.add_argument(
